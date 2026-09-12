@@ -1,0 +1,9 @@
+# MFDS_SERVICE_KEY 하나로 낱알식별·제품 허가정보·e약은요를 모두 조회합니다.
+MFDS_SERVICE_KEY="공공데이터포털 일반 인증키 Decoding"
+# Supabase 검색 캐시는 선택 사항입니다. 두 값을 함께 설정하세요.
+SUPABASE_URL="https://ibewkuwcdeqxbaqtqjcl.supabase.co"
+# 아래 두 키 중 하나만 설정하세요. 기존 SUPABASE_SECRET_KEY 이름도 유지합니다.
+SUPABASE_SECRET_KEY=""
+SUPABASE_SERVICE_ROLE_KEY=""
+# Secret key 사용 시 SUPABASE_SECRET_KEY="sb_secret_..."
+# service_role JWT 사용 시 SUPABASE_SERVICE_ROLE_KEY="발급받은 service_role 키"

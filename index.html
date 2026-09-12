@@ -2,10 +2,11 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#12372f" />
   <meta name="description" content="알약의 장축·단축·두께를 실제 크기로 확인하는 화면 측정 도구" />
   <title>알약 실물크기 측정기</title>
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js"}}</script>
   <style>
     :root{--ink:#17211e;--muted:#66736f;--green:#12372f;--mint:#dff3ec;--line:#dce5e1;--paper:#f4f7f5;--white:#fff;--accent:#ff6b4a;--shadow:0 16px 40px rgba(25,50,42,.11);--ppmm:3.78}
     *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:Pretendard,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}button,input,select{font:inherit}button{cursor:pointer}
@@ -17,6 +18,20 @@
     .modebar{display:flex;gap:5px;width:max-content;background:#e7eeeb;border-radius:14px;padding:5px;margin:0 0 18px}.modebar button{border:0;background:transparent;padding:10px 16px;border-radius:10px;color:#687570;font-weight:750}.modebar button.active{background:#fff;color:var(--green);box-shadow:0 3px 10px rgba(20,55,46,.1)}
     .liquid-tool{display:none}.liquid-tool.active{display:grid}.pill-tool.hidden{display:none}.camera-card,.liquid-controls{padding:22px}.camera-wrap{position:relative;min-height:520px;border-radius:20px;overflow:hidden;background:#17211e;display:grid;place-items:center}.camera-wrap video{position:absolute;width:100%;height:100%;object-fit:cover}.camera-placeholder{color:#dce8e4;text-align:center;padding:30px;z-index:1}.camera-placeholder b{display:block;font-size:1.1rem;margin-bottom:8px}.camera-placeholder button{border:0;background:var(--accent);color:#fff;border-radius:12px;padding:12px 16px;font-weight:800;margin-top:14px}.cup-guide{display:none;position:absolute;z-index:2;left:24%;right:24%;top:15%;bottom:12%;border:2px dashed rgba(255,255,255,.8);border-radius:22% 22% 12% 12%}.camera-wrap.live .cup-guide{display:block}.camera-wrap.live .camera-placeholder{display:none}.level-line{position:absolute;left:-16%;right:-16%;bottom:40%;height:3px;background:#ffdb70}.level-line:after{content:"액면선";position:absolute;right:0;bottom:7px;color:#ffebad;font-size:.72rem;font-weight:800}.volume-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(12,35,29,.82);color:#fff;border-radius:16px;padding:12px 16px;text-align:center;backdrop-filter:blur(8px)}.volume-badge strong{font-size:1.55rem}.liquid-controls h2{margin:0 0 8px}.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.select,.num{width:100%;height:48px;border:1px solid #cfdad6;border-radius:12px;background:#fbfdfc;padding:0 12px}.slider-label{display:flex;justify-content:space-between;margin-top:20px;font-size:.84rem;font-weight:750}.liquid-controls input[type=range]{width:100%;accent-color:var(--accent);margin:12px 0}.tip{font-size:.79rem;line-height:1.55;color:var(--muted);background:#f3f7f5;border-radius:13px;padding:12px;margin-top:16px}.danger{color:#8c3c2d;background:#fff2ef;border:1px solid #f5c6bc}.camera-error{color:#ffcfbf;font-size:.8rem;margin-top:8px}
     @media(max-width:760px){.liquid-tool.active{grid-template-columns:1fr}.camera-wrap{min-height:430px}.camera-card{order:-1}.modebar{width:100%}.modebar button{flex:1;padding:10px 8px;font-size:.84rem}}
+
+    .search-form label{display:block;font-size:.8rem;font-weight:700;margin-bottom:8px}.search-row{display:flex;gap:8px}.search-row input{min-width:0;width:100%;padding:12px;border:1px solid var(--line);border-radius:12px}.search-row button,.pagination button{border:0;border-radius:10px;background:var(--green);color:#fff;padding:10px 15px}button:disabled{opacity:.45;cursor:default}.results{display:grid;gap:8px;margin-top:12px;max-height:340px;overflow:auto}.result{background:#f5faf8;border:1px solid var(--line);padding:12px;text-align:left;border-radius:12px;line-height:1.5}.result[aria-pressed="true"]{border-color:var(--green);background:var(--mint)}.result b,.result small{display:block}.result small{color:var(--muted)}.pagination{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:.8rem}[hidden]{display:none!important}.selection{margin:18px 0 10px;padding:12px;background:var(--mint);border-radius:12px;font-size:.85rem;line-height:1.5;overflow-wrap:anywhere}.text-button{border:0;background:none;color:var(--green);padding:6px 0;text-decoration:underline}.fields{margin-top:12px}.cal-scroll{overflow-x:auto;padding:8px 0 16px}.cal-reference{width:204.02px;border-left:2px solid var(--green);border-right:2px solid var(--green);border-bottom:2px solid var(--green);height:40px;text-align:center;white-space:nowrap;font-size:.7rem;padding-top:10px}.pill{max-width:none;transition:none}.pill.round{width:calc(var(--long)*var(--ppmm)*1px)}.canvas{overflow:auto}.pill-wrap{padding:24px}.status{display:block}.shape-row{margin-top:12px}
+    @media(max-width:760px){.stage{order:0}.status{font-size:.65rem;padding:6px}.top{gap:8px}h1{font-size:1rem}.stage-head{flex-wrap:wrap}}
+    .search-filters{margin-top:12px;font-size:.8rem}.search-filters summary,.medicine-details summary{cursor:pointer;color:var(--green);font-weight:700}.search-filters label{margin-top:10px}.search-filters input{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px}.result{display:flex;align-items:center;gap:10px;min-width:0}.result-copy{min-width:0;overflow-wrap:anywhere}.result-photo{width:64px;height:48px;object-fit:contain;flex:none;background:white;border-radius:8px}.medicine-details{margin:12px 0;font-size:.8rem;line-height:1.6}.medicine-photo{margin:0 0 12px}.medicine-photo img{display:block;width:100%;max-height:190px;object-fit:contain;background:#f7faf8;border-radius:12px}.medicine-photo figcaption,.image-fallback{color:var(--muted);font-size:.75rem}.medicine-facts{margin:10px 0}.medicine-facts div{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}.medicine-facts dt{color:var(--muted)}.medicine-facts dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}.mark-image{max-width:100px;max-height:60px;object-fit:contain}.medicine-details a{color:var(--green)}
+    .dim-tabs{display:flex;background:#edf2f0;padding:4px;border-radius:11px;height:42px}.dim-tabs button{border:0;background:transparent;border-radius:8px;padding:0 13px;color:#687570;font-size:.82rem}.dim-tabs button.active{background:white;color:var(--green);font-weight:800;box-shadow:0 2px 8px rgba(20,55,46,.1)}
+    .view3d{display:flex;flex-direction:column}
+    .zoom-tabs{display:flex;background:#edf2f0;padding:4px;border-radius:11px;width:max-content;margin-top:10px}
+    .zoom-tabs button{border:0;background:transparent;border-radius:8px;padding:7px 11px;color:#687570;font-size:.78rem}
+    .zoom-tabs button.active{background:white;color:var(--green);font-weight:800;box-shadow:0 2px 8px rgba(20,55,46,.1)}
+    .scene3d{flex:1;min-height:340px;border-radius:19px;background:radial-gradient(120% 120% at 50% 18%,#eef3f0 0%,#dde6e1 65%,#ccd6d0 100%);margin-top:10px;overflow:hidden;touch-action:none;cursor:grab;position:relative}
+    .scene3d:active{cursor:grabbing}
+    .scene3d canvas{display:block;width:100%;height:100%}
+    .scene3d-hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(12,35,29,.55);color:#fff;font-size:.72rem;padding:6px 12px;border-radius:99px;pointer-events:none;white-space:nowrap}
+    @media(max-width:760px){.scene3d-hint{font-size:.66rem;padding:5px 9px}}
   </style>
 </head>
 <body>
@@ -25,7 +40,24 @@
   <nav class="modebar" aria-label="측정 도구"><button class="active" data-mode="pill">알약 실물크기</button><button data-mode="liquid">액체 용량</button></nav>
   <div class="grid pill-tool" id="pillTool">
     <section class="card controls" aria-labelledby="input-title">
-      <div class="eyebrow">STEP 1 · 치수 입력</div><h2 id="input-title">약학정보원의 치수를 입력하세요</h2><p class="lead">단위는 mm입니다. 입력 즉시 오른쪽 약 모형에 반영됩니다.</p>
+      <div class="eyebrow">STEP 1 · 의약품 검색</div><h2 id="input-title">어떤 약의 크기가 궁금하세요?</h2><p class="lead">약 이름으로 검색하고 제조사와 함량을 확인해 선택하세요.</p>
+      <form id="searchForm" class="search-form"><label for="query">의약품 이름</label><div class="search-row"><input id="query" type="search" minlength="2" maxlength="80" placeholder="예: 타이레놀" autocomplete="off"><button type="submit">검색</button></div>
+        <details class="search-filters"><summary>업체명·품목일련번호로 검색 조건 추가</summary><label for="companyQuery">업체명</label><input id="companyQuery" maxlength="80" placeholder="제조·수입업체 이름" autocomplete="off"><label for="itemSeqQuery">품목일련번호</label><input id="itemSeqQuery" maxlength="20" pattern="[0-9]+" inputmode="numeric" placeholder="숫자로 입력" autocomplete="off"></details>
+      </form>
+      <p id="searchStatus" class="cal-note" role="status" aria-live="polite">식약처 낱알식별 정보에 등록된 제품을 검색합니다.</p><div id="results" class="results"></div>
+      <div id="pagination" class="pagination" hidden><button id="prevPage">이전</button><span id="pageLabel"></span><button id="nextPage">다음</button></div>
+      <div id="selection" class="selection" aria-live="polite">직접 입력 예시 · 특정 의약품의 치수가 아닙니다.</div>
+      <section id="medicineDetails" class="medicine-details" aria-label="선택한 의약품 낱알식별 정보" hidden>
+        <figure class="medicine-photo"><div id="medicineImage"></div><figcaption>식약처 제공 제품 사진 · 사진은 실물 크기가 아닙니다.</figcaption></figure>
+        <dl id="identityFacts" class="medicine-facts"></dl>
+        <div id="extraDetails" hidden>
+          <details><summary>성분·허가정보 (제품 허가정보)</summary><p id="permitStatus" role="status"></p><dl id="permitFacts" class="medicine-facts"></dl><a href="https://www.data.go.kr/data/15095677/openapi.do" target="_blank" rel="noopener noreferrer">출처: 의약품 제품 허가정보</a></details>
+          <details><summary>복약정보 (e약은요)</summary><p id="easyStatus" role="status"></p><dl id="easyFacts" class="medicine-facts"></dl><a href="https://www.data.go.kr/data/15075057/openapi.do" target="_blank" rel="noopener noreferrer">출처: e약은요</a></details>
+          <details><summary>추가 품목 정보 보기</summary><dl id="extraFacts" class="medicine-facts"></dl></details>
+          <a href="https://www.data.go.kr/data/15057639/openapi.do" target="_blank" rel="noopener noreferrer">출처: 식품의약품안전처 의약품 낱알식별 정보</a>
+        </div>
+      </section>
+      <button id="manual" class="text-button" type="button">치수 직접 입력</button><p class="cal-note">장축·단축·두께 (mm)</p>
       <div class="fields">
         <div class="field"><label for="long">장축</label><div class="inputwrap"><input id="long" type="number" min="1" max="40" step="0.1" value="17.2" inputmode="decimal"><span class="unit">mm</span></div></div>
         <div class="field"><label for="short">단축</label><div class="inputwrap"><input id="short" type="number" min="1" max="40" step="0.1" value="7.1" inputmode="decimal"><span class="unit">mm</span></div></div>
@@ -33,14 +65,23 @@
       </div>
       <div class="shape-row" role="group" aria-label="알약 모양"><button class="shape active" data-shape="oval"><i></i>타원형</button><button class="shape" data-shape="capsule"><i></i>장방형</button><button class="shape" data-shape="round"><i></i>원형</button></div>
       <div class="divider"></div>
-      <div class="cal-head"><b>화면 크기 보정</b><button id="toggleCal" aria-expanded="false">보정하기</button></div><p class="cal-note">휴대폰마다 픽셀 크기가 달라 최초 1회 보정이 필요합니다.</p>
-      <div class="cal-panel" id="calPanel"><div class="credit-card" id="card"><span>기준 카드 · 85.60 × 53.98 mm</span><small>실제 신용카드를 화면에 대고<br>가로 폭을 정확히 맞춰주세요.</small></div><input id="calRange" type="range" min="55" max="145" value="100"><div class="cal-actions"><span id="calValue">100%</span><button id="saveCal">이 크기로 저장</button></div></div>
+      <div class="cal-head"><b>화면 크기 보정</b><button id="toggleCal" aria-expanded="false">보정하기</button></div><p class="cal-note">실제 카드의 짧은 변(53.98 mm)을 아래 기준선에 맞춰 보정하세요. 기기·브라우저 배율이 바뀌면 다시 보정하세요.</p>
+      <div class="cal-panel" id="calPanel"><div class="cal-scroll"><div id="card" class="cal-reference">↔ 카드의 짧은 변 · 53.98 mm</div></div><input id="calRange" type="range" min="50" max="150" step="0.1" value="100"><div class="cal-actions"><span id="calValue">100%</span><button id="saveCal">이 크기로 저장</button></div></div>
     </section>
     <section class="card stage" aria-labelledby="stage-title">
-      <div class="stage-head"><div><div class="eyebrow">STEP 2 · 실물 비교</div><h2 id="stage-title">화면 위에서 크기를 확인하세요</h2></div><div class="view-tabs"><button class="active" data-view="front">앞면</button><button data-view="side">옆면</button></div></div>
-      <div class="canvas"><div class="pill-wrap"><div id="pill" class="pill oval" style="--long:17.2;--short:7.1"><span>TABLET</span></div><div class="measure" id="measure"><span>장축 17.2 mm</span><span>단축 7.1 mm</span></div></div></div>
+      <div class="stage-head"><div><div class="eyebrow">STEP 2 · 실물 비교</div><h2 id="stage-title">화면 위에서 크기를 확인하세요</h2></div><div class="dim-tabs" role="group" aria-label="보기 방식"><button class="active" data-dim="2d">2D 실물크기</button><button data-dim="3d">3D 모형</button></div></div>
+      <div id="view2d" class="view2d">
+        <div class="view-tabs"><button class="active" data-view="front">앞면</button><button data-view="side">옆면</button></div>
+        <p id="modelNote" class="cal-note">직접 입력 예시 · 화면 보정 후 비교하세요.</p><div class="canvas"><div class="pill-wrap"><div id="pill" class="pill oval" style="--long:17.2;--short:7.1"><span>TABLET</span></div><div class="measure" id="measure"><span>장축 17.2 mm</span><span>단축 7.1 mm</span></div></div></div>
+      </div>
+      <div id="view3d" class="view3d" hidden>
+        <p class="cal-note">2D와 같은 화면 보정 기준의 실제 크기 3D 모형입니다.</p>
+        <p id="model3dNote" class="cal-note"></p>
+        <div class="zoom-tabs" role="group" aria-label="크기 보기"><button class="active" data-zoom="1">실제 크기</button><button data-zoom="2">확대 보기</button></div>
+        <div class="scene3d" id="scene3d"><p class="scene3d-hint">드래그하여 회전 · 두 손가락으로 확대/축소</p></div>
+      </div>
       <div class="warning"><strong>ⓘ</strong><div><b>실물 판별용이 아닌 크기 비교 보조 도구입니다.</b><br>화면 확대·축소가 100%인지 확인하고, 약의 식별과 복용은 반드시 약사 또는 의사에게 확인하세요.</div></div>
-      <div class="footer">입력한 정보는 서버로 전송되지 않고 이 화면에서만 사용됩니다.</div>
+      <div class="footer">검색어는 조회 및 캐시를 위해 서버로 전송됩니다. 화면 보정값은 이 기기에 저장됩니다.</div>
     </section>
   </div>
   <div class="grid liquid-tool" id="liquidTool">
@@ -55,22 +96,5 @@
     <section class="card camera-card"><div class="camera-wrap" id="cameraWrap"><video id="camera" playsinline muted></video><div class="camera-placeholder"><b>카메라로 투명컵을 비춰보세요</b><span>영상은 기기 안에서만 표시됩니다.</span><br><button id="startCamera">카메라 켜기</button><div class="camera-error" id="cameraError"></div></div><div class="cup-guide"><div class="level-line" id="levelLine"></div><div class="volume-badge"><strong id="volumeText">40 mL</strong><br><small>추정 용량</small></div></div></div></section>
   </div>
 </main>
-<script>
-  const root=document.documentElement,longEl=document.querySelector('#long'),shortEl=document.querySelector('#short'),thickEl=document.querySelector('#thick'),pill=document.querySelector('#pill'),measure=document.querySelector('#measure');
-  let shape='oval',view='front'; const saved=Number(localStorage.getItem('pillCal')||1);
-  function applyCal(v){root.style.setProperty('--ppmm',3.7795275591*v);document.querySelector('#status').textContent=localStorage.getItem('pillCal')?'화면 보정 완료':'화면 보정 필요'} applyCal(saved);
-  function safe(el,fallback){const v=parseFloat(el.value);return Number.isFinite(v)&&v>0?v:fallback}
-  function render(){const l=safe(longEl,17.2),s=safe(shortEl,7.1),t=safe(thickEl,5.2);const a=view==='front'?l:l,b=view==='front'?s:t;root.style.setProperty('--long',a);root.style.setProperty('--short',b);pill.style.setProperty('--long',a);pill.style.setProperty('--short',b);pill.className='pill '+(view==='side'?'capsule':shape);pill.querySelector('span').textContent=view==='front'?'TABLET':'';measure.innerHTML=view==='front'?`<span>장축 ${l} mm</span><span>단축 ${s} mm</span>`:`<span>길이 ${l} mm</span><span>두께 ${t} mm</span>`}
-  [longEl,shortEl,thickEl].forEach(x=>x.addEventListener('input',render));
-  document.querySelectorAll('.shape').forEach(b=>b.onclick=()=>{document.querySelectorAll('.shape').forEach(x=>x.classList.remove('active'));b.classList.add('active');shape=b.dataset.shape;render()});
-  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-view]').forEach(x=>x.classList.remove('active'));b.classList.add('active');view=b.dataset.view;render()});
-  const panel=document.querySelector('#calPanel'),toggle=document.querySelector('#toggleCal'),range=document.querySelector('#calRange');toggle.onclick=()=>{panel.classList.toggle('open');toggle.setAttribute('aria-expanded',panel.classList.contains('open'));toggle.textContent=panel.classList.contains('open')?'닫기':'보정하기'};
-  range.value=Math.round(saved*100);function previewCal(){const v=range.value/100;document.querySelector('#card').style.width=(85.6*v)+'mm';document.querySelector('#calValue').textContent=range.value+'%'}range.oninput=previewCal;previewCal();
-  document.querySelector('#saveCal').onclick=()=>{const v=range.value/100;localStorage.setItem('pillCal',v);applyCal(v);panel.classList.remove('open');toggle.textContent='다시 보정';toggle.setAttribute('aria-expanded','false');render()};render();
-  document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-mode]').forEach(x=>x.classList.remove('active'));b.classList.add('active');const liquid=b.dataset.mode==='liquid';document.querySelector('#pillTool').classList.toggle('hidden',liquid);document.querySelector('#liquidTool').classList.toggle('active',liquid)});
-  const level=document.querySelector('#levelRange'),maxMl=document.querySelector('#maxMl'),cupShape=document.querySelector('#cupShape');
-  function liquidRender(){const p=Number(level.value)/100,m=Math.max(0,Number(maxMl.value)||0);const ratio=cupShape.value==='taper'?(.45*p+.55*p*p):p;const ml=Math.round(m*ratio*10)/10;document.querySelector('#currentMl').value=ml;document.querySelector('#volumeText').textContent=ml+' mL';document.querySelector('#levelPercent').textContent=level.value+'%';document.querySelector('#levelLine').style.bottom=level.value+'%'}
-  [level,maxMl,cupShape].forEach(x=>x.addEventListener('input',liquidRender));liquidRender();
-  document.querySelector('#startCamera').onclick=async()=>{const err=document.querySelector('#cameraError');try{const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});const v=document.querySelector('#camera');v.srcObject=stream;await v.play();document.querySelector('#cameraWrap').classList.add('live')}catch(e){err.textContent='카메라 권한을 확인해주세요. HTTPS 환경에서만 사용할 수 있습니다.'}};
-</script>
+<script src="/app.js" defer></script>
 </body></html>
