@@ -9,3 +9,4 @@ revoke all on public.medicine_search_cache from anon, authenticated;
 grant select, insert, update, delete on public.medicine_search_cache to service_role;
 create index if not exists medicine_search_cache_expiry on public.medicine_search_cache(expires_at);
 -- 정기 정리(선택): delete from public.medicine_search_cache where expires_at < now();
+      

@@ -1,0 +1,9 @@
+{
+  "appId": "com.example.sizepill",
+  "appName": "알약 실물크기 측정기",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  }
+}

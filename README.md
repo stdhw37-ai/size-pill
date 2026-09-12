@@ -98,3 +98,29 @@ Cloudflare의 Git 빌드를 사용할 경우 빌드 명령은 `npm run build`, �
 - 부분 실패일 때 `payload.partial=true`이며 60초 후 재검색 시 다시 조회합니다. 정상 결과의 캐시는 24시간입니다.
 
 병합은 품목번호 정확 일치만 허용하며, 검색 대상 자체는 낱알식별 등록 제품입니다. 요청량 관리를 위해 `numOfRows`는 최대 20입니다. [공식 URL·필드 및 병합 정책](docs/mfds-api.md)을 참고하세요.
+
+## 모바일 앱 (Capacitor)
+
+`android/`, `ios/`는 Capacitor로 생성한 네이티브 프로젝트입니다. 웹(`dist/`)을 그대로 감싸며, MFDS/Supabase 인증키는 앱에 포함되지 않고 계속 Cloudflare Worker 서버에만 있습니다 — 네이티브 앱은 배포된 Worker를 `public/app.js`의 `NATIVE_API_BASE`로 지정한 HTTPS 주소로 호출할 뿐입니다.
+
+**출시 전 필수 작업**
+1. `capacitor.config.json`의 `appId`(현재 `com.example.sizepill` 임시값)를 실제 값으로 변경.
+2. `public/app.js`의 `NATIVE_API_BASE`를 실제 배포한 Worker 주소(`npm run deploy` 결과 URL)로 변경.
+3. `public/icons/`, `resources/icon.png`, `resources/splash.png`는 임시 플레이스홀더 — 실제 아이콘으로 교체 후 `npx capacitor-assets generate`로 각 플랫폼 규격 생성.
+4. `index.html` 하단 개인정보처리방침/이용약관 링크(`#privacyLink`, `#termsLink`)를 실제 게시된 URL로 교체.
+
+**Android 빌드**
+```bash
+npm run cap:sync           # dist 빌드 후 android/ios에 복사
+npm run cap:open:android   # Android Studio에서 android/ 열기
+```
+Android Studio에서 Build → Generate Signed Bundle/APK로 AAB를 만들거나, CLI로 `cd android && ./gradlew bundleRelease`.
+
+**iOS 빌드** (macOS + Xcode 필요 — 이 저장소는 Linux 환경이라 프로젝트 구조만 생성·검증했고 실제 빌드는 확인하지 못했습니다)
+```bash
+npm run cap:sync
+npm run cap:open:ios       # Xcode에서 ios/App/App.xcworkspace 열기
+```
+Xcode에서 Signing & Capabilities에 Team을 지정하고 Product → Archive로 App Store Connect 업로드.
+
+카메라 권한은 `android/app/src/main/AndroidManifest.xml`(`CAMERA`)과 `ios/App/App/Info.plist`(`NSCameraUsageDescription`)에 이미 선언되어 있습니다.

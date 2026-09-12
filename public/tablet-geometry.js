@@ -1,10 +1,29 @@
 // Pure geometry logic, independent of where THREE is imported from (browser vendor copy vs the
 // npm package in tests) - callers inject THREE so this module has no import of its own.
 
+// Approximate CSS colors for the official 식약처 color-class names; unknown/blank falls back to a neutral tablet tone.
+export const COLOR_MAP = { 하양: '#ffffff', 흰색: '#ffffff', 노랑: '#ffe066', 노란색: '#ffe066', 주황: '#ff9f43', 분홍: '#f8b8c6', 빨강: '#e6544a', 빨간색: '#e6544a', 갈색: '#8a5a3c', 연두: '#c3e07a', 초록: '#4caf7d', 녹색: '#4caf7d', 청록: '#3fb8af', 파랑: '#4a7fe6', 파란색: '#4a7fe6', 남색: '#33418f', 자주: '#a54a8f', 보라: '#8a63c9', 회색: '#b7bfba', 검정: '#33383a', 검은색: '#33383a', 투명: '#eef2f0' };
+// COLOR_CLASS1/2 is usually one plain color word, but real data also packs a modifier or a second
+// color into the same field with a comma - e.g. "주황, 투명" (capsule body + transparent shell),
+// "노랑, 옅은" (yellow, pale), "하양, 빨강" (bicolor). An exact-string lookup misses all of these and
+// silently falls back to neutral gray, so this checks each comma/space-separated token in turn.
+export function colorToCss(name) {
+  const text = String(name ?? '').trim();
+  if (!text) return '#eef2f0';
+  for (const token of text.split(/[,\s]+/)) {
+    if (COLOR_MAP[token]) return COLOR_MAP[token];
+  }
+  return '#eef2f0';
+}
+
 // Finer shape classification for 3D geometry than the 3-bucket 2D shape (round/oval/capsule button row).
-export function classifyShape3D(rawShapeText, coarseShape) {
+// `extraText` is the official CHART/product-name text: real DRUG_SHAPE values are always a plain
+// outline word (원형/장방형/타원형/...) even for capsules - MFDS never writes "캡슐형" there. A hard
+// (hinged, two-tone) capsule is only identifiable from CHART/name text ("...경질캡슐"/"...연질캅셀",
+// the older "캅셀" spelling included), so that text is checked first and wins over the outline word.
+export function classifyShape3D(rawShapeText, coarseShape, extraText = '') {
   const raw = String(rawShapeText || '');
-  if (raw.includes('캡슐')) return 'capsule';
+  if (/캡슐|캅셀/.test(String(extraText || '')) || raw.includes('캡슐')) return 'capsule';
   if (raw.includes('장방')) return 'oblong';
   if (raw.includes('사각')) return 'square';
   if (raw.includes('타원')) return 'oval';
@@ -54,25 +73,7 @@ function roundedRectShape(THREE, halfX, halfY, radius) {
 // (mm units treated 1:1 as world units). Bevel/convexity only rounds edges *within* that box -
 // it never changes the long:short:thick ratio of the final bounding box.
 export function buildTabletGeometry(THREE, { long, short, thick, shape3d }) {
-  const longR = long / 2, shortR = short / 2, halfT = thick / 2;
-
-  if (shape3d === 'round') {
-    // A LatheGeometry revolved around Y, then rotated so the revolve (radius) plane is XY
-    // and the height axis becomes Z (thickness) - X and Y both end up as the exact diameter.
-    const steps = 16;
-    const points = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const y = -halfT + t * thick;
-      const edge = Math.pow(Math.abs(2 * t - 1), 3); // 0 at the equator, 1 at the extreme top/bottom
-      const r = Math.max(shortR * (1 - 0.25 * edge), 0.001);
-      points.push(new THREE.Vector2(r, y));
-    }
-    const geometry = new THREE.LatheGeometry(points, 48);
-    geometry.rotateX(Math.PI / 2);
-    geometry.computeVertexNormals();
-    return geometry;
-  }
+  const longR = long / 2, shortR = short / 2;
 
   const bevelSize = Math.min(shortR * 0.25, 0.6);
   const bevelThickness = Math.min(thick * 0.2, 0.6);

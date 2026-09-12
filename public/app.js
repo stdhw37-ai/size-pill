@@ -1,4 +1,17 @@
 const $ = selector => document.querySelector(selector);
+// Web/PWA: relative paths work because the Worker serves both the API and the static assets from
+// the same origin. A Capacitor-packaged native app has no same-origin backend - `window.Capacitor`
+// is only defined inside that native shell, so this only changes behavior there. Point
+// NATIVE_API_BASE at the deployed Worker's public HTTPS URL before shipping a native build; the
+// MFDS/Supabase secret keys stay server-side either way, since this only changes *where* the
+// browser/webview sends its request, never what runs inside the Worker.
+const NATIVE_API_BASE = 'https://YOUR-WORKER-SUBDOMAIN.workers.dev';
+const API_BASE = (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) ? NATIVE_API_BASE : '';
+// Tied directly to the online/offline events (not a re-read of navigator.onLine): some runtimes
+// don't flip navigator.onLine in lockstep with the events, and the events are the reliable signal.
+window.addEventListener('online', () => { const el = $('#networkBanner'); if (el) el.hidden = true; });
+window.addEventListener('offline', () => { const el = $('#networkBanner'); if (el) el.hidden = false; });
+if ($('#networkBanner')) $('#networkBanner').hidden = navigator.onLine !== false;
 const root = document.documentElement, longEl = $('#long'), shortEl = $('#short'), thickEl = $('#thick'), pill = $('#pill'), measure = $('#measure');
 let shape = 'oval', view = 'front', selected = null, query = {}, page = 1, controller;
 const readCal = () => { try { return JSON.parse(localStorage.getItem('pillCalV2')); } catch { return null; } };
@@ -12,9 +25,6 @@ function applyCal(value) {
   $('#status').textContent = valid ? '화면 보정 적용 중' : '화면 보정 필요';
 }
 function number(el) { const n = Number(el.value); return el.value.trim() && Number.isFinite(n) && n > 0 && n <= 100 ? n : null; }
-// Approximate CSS colors for the official 식약처 color-class names; unknown/blank falls back to a neutral tablet tone.
-const COLOR_MAP = { 하양: '#ffffff', 흰색: '#ffffff', 노랑: '#ffe066', 노란색: '#ffe066', 주황: '#ff9f43', 분홍: '#f8b8c6', 빨강: '#e6544a', 빨간색: '#e6544a', 갈색: '#8a5a3c', 연두: '#c3e07a', 초록: '#4caf7d', 녹색: '#4caf7d', 청록: '#3fb8af', 파랑: '#4a7fe6', 파란색: '#4a7fe6', 남색: '#33418f', 자주: '#a54a8f', 보라: '#8a63c9', 회색: '#b7bfba', 검정: '#33383a', 검은색: '#33383a', 투명: '#eef2f0' };
-function colorToCss(name) { return COLOR_MAP[String(name ?? '').trim()] || '#eef2f0'; }
 // The Three.js/OrbitControls scene loads asynchronously (real fetch in the browser); this stays
 // null in environments without it (e.g. the DOM test harness), and 2D keeps working regardless.
 let three3d = null;
@@ -31,13 +41,11 @@ let three3d = null;
     console.warn('3D 모형을 불러오지 못했습니다.', err);
   }
 })();
-function setupThree3D(THREE, OrbitControls, { buildTabletGeometry, classifyShape3D, paintCapsuleColors }) {
+function setupThree3D(THREE, OrbitControls, { buildTabletGeometry, classifyShape3D, paintCapsuleColors, colorToCss }) {
   const container = $('#scene3d');
   const FOV = 32;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.prepend(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -62,31 +70,50 @@ function setupThree3D(THREE, OrbitControls, { buildTabletGeometry, classifyShape
   // nothing. DOLLY_PAN with enablePan=false zooms only, which is exactly pinch-to-zoom.
   controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
-  scene.add(new THREE.AmbientLight(0xffffff, 1.6));
-  const key = new THREE.DirectionalLight(0xffffff, 3.6);
-  key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
+  // No tone-mapping curve and no shadow-casting: the previous ACES + shadow-mapped, single-hot-
+  // DirectionalLight(3.6) setup routinely pushed the lit side of the tablet past 1.0 per channel
+  // (clipping to white regardless of hue) while the shadowed side/contact shadow crushed toward
+  // black - see the report at the end of this function for the full before/after breakdown.
+  // A hemisphere light (sky/ground, never zero on either side) does most of the work so every
+  // face stays visibly lit and colored; the two directional lights are just faint modeling light.
+  // Measured via headless screenshot pixel sampling (see report): three.js divides Lambert diffuse
+  // by pi, so these intensities read noticeably dimmer than the numbers suggest - the first pass
+  // (1.05/0.12/0.42/0.2) rendered colkin's #ffe066 as a muddy (179,157,70), ~70% of true brightness
+  // despite the correct hue ratio. Scaled up ~1.5x here to read as a clearly, unmistakably lit color.
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xd7dbd6, 1.7));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+  const key = new THREE.DirectionalLight(0xffffff, 0.6);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xffffff, 1.4);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.28);
   scene.add(fill);
-  const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.25 }));
-  shadowPlane.receiveShadow = true;
-  scene.add(shadowPlane);
 
   let mesh = null;
-  let zoomFactor = 1; // 1 = real size, >1 = magnified view (never changes geometry, only camera distance)
+  let boundingRadius = 5;
+  let hasDims = false;
+  // Default to 'fit': a 7mm tablet at the real mm-to-px scale is only ~26 CSS px tall, too small to
+  // read shape/thickness/color at a glance. 'real' is still one tap away for an exact-scale check.
+  let sizeMode = 'fit';
 
   function currentPpmm() { return parseFloat(root.style.getPropertyValue('--ppmm')) || 3.7795275591; }
   // Solve the camera distance so that, at the object's depth, 1mm maps to exactly `ppmm` CSS pixels -
-  // the same real-size basis the 2D model uses, shared via the same --ppmm value.
+  // the same real-size basis the 2D model uses, shared via the same --ppmm value. Independent of
+  // the object's own size, so it never drifts from the 2D reference.
   function realSizeDistance() {
     const heightPx = Math.max(1, container.clientHeight);
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
-    return heightPx / (2 * currentPpmm() * zoomFactor * Math.tan(fovRad / 2));
+    return heightPx / (2 * currentPpmm() * Math.tan(fovRad / 2));
+  }
+  // Solve the distance so the tablet's diameter fills `targetFraction` of the shorter viewport side -
+  // a view-for-detail framing, deliberately decoupled from the mm-to-px scale above. A 7mm tablet at
+  // 3.78 px/mm is only ~26 CSS px tall, which is why the old "x2.2" magnifier still looked tiny.
+  function fitDistance(targetFraction = 0.42) {
+    const heightPx = Math.max(1, container.clientHeight), widthPx = Math.max(1, container.clientWidth);
+    const minSidePx = Math.min(heightPx, widthPx);
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    return (boundingRadius * heightPx) / (Math.tan(fovRad / 2) * targetFraction * minSidePx);
   }
   function applyDistance() {
-    const distance = realSizeDistance();
+    const distance = sizeMode === 'fit' ? fitDistance() : realSizeDistance();
     const direction = camera.position.clone().sub(controls.target);
     if (direction.lengthSq() < 1e-6) direction.set(0, 0.35, 1);
     direction.normalize();
@@ -100,44 +127,51 @@ function setupThree3D(THREE, OrbitControls, { buildTabletGeometry, classifyShape
     camera.aspect = w / h; camera.updateProjectionMatrix();
   }
 
+  function updateNote(hasDims) {
+    if (!hasDims) { $('#model3dNote').textContent = '치수 정보가 없어 형태를 정확히 표시할 수 없습니다. 예시 비율로 표시합니다.'; return; }
+    const subject = selected ? '공개 치수·색상·형태를 그대로 반영한 3D 모형입니다.' : '직접 입력 예시 · 특정 의약품의 형태가 아닙니다.';
+    const mode = sizeMode === 'fit'
+      ? '확대 보기 · 크기 비교용이 아닌 형태·두께 관찰용입니다.'
+      : '실제 크기 · 2D 실물크기와 같은 화면 보정 기준입니다.';
+    $('#model3dNote').textContent = `${subject} ${mode}`;
+  }
+
   function update(l, s, t) {
-    $('#model3dNote').textContent = !(l && s) ? '치수 정보가 없어 형태를 정확히 표시할 수 없습니다. 예시 비율로 표시합니다.' : selected ? '공개 치수·색상·형태를 그대로 반영한 실제 크기 3D 모형입니다.' : '직접 입력 예시 · 특정 의약품의 형태가 아닙니다.';
+    hasDims = !!(l && s);
     const long = l || 12, short = s || 6, thick = t || 4;
-    const shape3d = classifyShape3D(selected?.shape, shape);
+    const shape3d = classifyShape3D(selected?.shape, shape, `${selected?.description || ''} ${selected?.name || ''}`);
     const geometry = buildTabletGeometry(THREE, { long, short, thick, shape3d });
+    geometry.computeBoundingSphere();
+    boundingRadius = geometry.boundingSphere.radius;
     const front = colorToCss(selected?.colorFront), back = colorToCss(selected?.colorBack || selected?.colorFront);
+    // Matte/semi-matte finish (high roughness, ~0 metalness) so the base color reads clearly instead
+    // of a glossy plastic-like specular highlight, and no environment map so specular stays subtle.
+    const materialOptions = { roughness: 0.88, metalness: 0 };
     let material;
     if (shape3d === 'capsule') {
       paintCapsuleColors(THREE, geometry, front, back);
-      material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.04 });
+      material = new THREE.MeshStandardMaterial({ ...materialOptions, vertexColors: true });
     } else {
-      material = new THREE.MeshStandardMaterial({ color: new THREE.Color(front), roughness: 0.55, metalness: 0.04 });
+      material = new THREE.MeshStandardMaterial({ ...materialOptions, color: new THREE.Color(front) });
     }
     if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
     mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true; mesh.receiveShadow = true;
     scene.add(mesh);
 
     const radius = Math.max(long, short, thick) * 0.6;
     key.position.set(radius * 0.9, radius * 1.4, radius * 1.7);
-    key.shadow.camera.near = 0.1; key.shadow.camera.far = radius * 10;
-    key.shadow.camera.left = -radius * 2; key.shadow.camera.right = radius * 2;
-    key.shadow.camera.top = radius * 2; key.shadow.camera.bottom = -radius * 2;
-    key.shadow.camera.updateProjectionMatrix();
     fill.position.set(-radius * 1.3, -radius * 0.5, radius * 1.1);
-    shadowPlane.position.set(0, -short / 2 - Math.max(0.6, short * 0.1), 0);
-    shadowPlane.rotation.set(-Math.PI / 2, 0, 0);
-    shadowPlane.scale.setScalar(Math.max(long, short) * 6);
 
+    updateNote(hasDims);
     syncRendererSize();
     applyDistance();
   }
 
-  function setZoom(factor) { zoomFactor = factor; applyDistance(); }
-
   document.querySelectorAll('[data-zoom]').forEach(button => button.onclick = () => {
     document.querySelectorAll('[data-zoom]').forEach(el => el.classList.toggle('active', el === button));
-    setZoom(button.dataset.zoom === '2' ? 2.2 : 1);
+    sizeMode = button.dataset.zoom === '2' ? 'fit' : 'real';
+    applyDistance();
+    updateNote(hasDims);
   });
 
   let visible = false;
@@ -233,21 +267,35 @@ function facts(target, rows) {
     row.append(term, detail); target.append(row);
   }
 }
-// Only literal, explicit taste/scent words found in official text are shown; nothing is inferred from color or ingredients.
+// Only literal, explicit taste/scent words found in official text (성상/CHART) are shown; nothing is
+// inferred from color, ingredients, or excipients. Confirmed against real data: e.g. 센트룸키즈츄어블정's
+// CHART is "레몬향이나는 밝은 회색의 원형 츄어블정제" - genuine flavor wording does occur in this field.
 const FLAVOR_EXCLUDE = new Set(['방향', '방향족', '방향성', '방향제', '경향', '영향', '동향', '상향', '하향', '일방향', '양방향', '무향', '무취']);
 function extractFlavor(...texts) {
-  const found = new Set();
+  const taste = new Set(), scent = new Set();
   for (const raw of texts) {
     for (const match of String(raw ?? '').matchAll(/[가-힣]{1,6}(?:맛|향)/g)) {
-      if (!FLAVOR_EXCLUDE.has(match[0])) found.add(match[0]);
+      const word = match[0];
+      if (FLAVOR_EXCLUDE.has(word)) continue;
+      (word.endsWith('맛') ? taste : scent).add(word);
     }
   }
-  return found.size ? [...found].join(', ') : '';
+  return { taste: [...taste], scent: [...scent] };
 }
 function showIdentity(item) {
   $('#medicineDetails').hidden = false;
   $('#medicineImage').replaceChildren(productImage(item.imageUrl, `${item.name} 제품 사진`));
   const mm = key => item[key] ? `${item[key]} mm` : item.dimensionsRaw?.[key] ? `${item.dimensionsRaw[key]} (원문 · 정확한 크기로 표시 불가)` : '미제공';
+  const sizeSummary = $('#sizeSummary');
+  if (item.long && item.short && item.thick) {
+    sizeSummary.hidden = false;
+    sizeSummary.replaceChildren();
+    const value = document.createElement('strong'); value.textContent = `${item.long} × ${item.short} × ${item.thick} mm`;
+    const caption = document.createElement('small'); caption.textContent = '장축 × 단축 × 두께';
+    sizeSummary.append(value, caption);
+  } else {
+    sizeSummary.hidden = true;
+  }
   const rows = [
     ['모양', item.shape], ['색상 (앞 / 뒤)', `${item.colorFront || '미제공'} / ${item.colorBack || '미제공'}`],
     ['앞면 식별표시', item.printFront], ['뒷면 식별표시', item.printBack],
@@ -255,8 +303,9 @@ function showIdentity(item) {
     ['장축 / 단축', `${mm('long')} / ${mm('short')}`], ['두께', mm('thick')],
     ['제형', item.form], ['성상', item.description]
   ];
-  const flavor = extractFlavor(item.description, item.permit?.data?.description);
-  if (flavor) rows.push(['맛/향', flavor]);
+  const { taste, scent } = extractFlavor(item.description, item.permit?.data?.description);
+  if (taste.length && scent.length) rows.push(['맛', taste.join(', ')], ['향', scent.join(', ')]);
+  else if (taste.length || scent.length) rows.push(['맛/향', [...taste, ...scent].join(', ')]);
   facts($('#identityFacts'), rows);
   showSupplement(item);
   facts($('#extraFacts'), [
@@ -294,7 +343,7 @@ async function search(nextPage = 1) {
   $('#searchStatus').textContent = '의약품 정보를 찾고 있습니다…';
   $('#results').replaceChildren(); $('#pagination').hidden = true;
   try {
-    const response = await fetch('/api/medicines?' + new URLSearchParams({ ...query, pageNo: nextPage, numOfRows: 20 }), { signal: current.signal });
+    const response = await fetch(API_BASE + '/api/medicines?' + new URLSearchParams({ ...query, pageNo: nextPage, numOfRows: 20 }), { signal: current.signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || '검색에 실패했습니다.');
     if (current !== controller) return;
@@ -302,9 +351,13 @@ async function search(nextPage = 1) {
     $('#searchStatus').textContent = data.total ? `총 ${data.total}개 제품 · 제조사와 함량을 확인해주세요.` : '검색 결과가 없습니다. 제품명을 확인하거나 치수를 직접 입력해주세요.';
     for (const item of data.items) {
       const button = document.createElement('button'); button.className = 'result'; button.type = 'button'; button.setAttribute('aria-pressed', String(selected?.id === item.id));
-      const title = document.createElement('b'), detail = document.createElement('small'); title.textContent = item.name;
-      detail.textContent = `${item.company} · 품목 ${item.id} · ${item.shape || '모양 미제공'} · ${item.colorFront || '색상 미제공'}${item.colorBack ? ' / ' + item.colorBack : ''} · ${item.long && item.short ? item.long + ' × ' + item.short + ' mm' : '치수 정보 부족'}`;
-      const copy = document.createElement('span'); copy.className = 'result-copy'; copy.append(title, detail);
+      const title = document.createElement('b'); title.textContent = item.name;
+      const company = document.createElement('small'); company.className = 'r-meta'; company.textContent = item.company || '제조사 미제공';
+      const identity = document.createElement('small'); identity.className = 'r-meta';
+      identity.textContent = `품목 ${item.id} · ${item.shape || '모양 미제공'} · ${item.colorFront || '색상 미제공'}${item.colorBack ? ' / ' + item.colorBack : ''}`;
+      const dims = document.createElement('small'); dims.className = 'r-meta';
+      dims.textContent = item.long && item.short ? `장축 × 단축 · ${item.long} × ${item.short} mm` : '치수 정보 부족';
+      const copy = document.createElement('span'); copy.className = 'result-copy'; copy.append(title, company, identity, dims);
       if (safeImage(item.imageUrl)) button.append(productImage(item.imageUrl, '', 'result-photo'));
       button.append(copy); button.onclick = () => selectMedicine(item, button, data.fetchedAt); $('#results').append(button);
     }
@@ -312,7 +365,11 @@ async function search(nextPage = 1) {
     $('#prevPage').disabled = page <= 1; $('#nextPage').disabled = page * data.pageSize >= data.total || page >= 100;
     $('#pageLabel').textContent = `${page} / ${Math.ceil(data.total / data.pageSize)}`;
   } catch (error) {
-    if (current === controller && error.name !== 'AbortError') $('#searchStatus').textContent = error instanceof SyntaxError ? '검색 서버에 연결되지 않았습니다. 앱 서버를 실행해주세요.' : error.message;
+    if (current === controller && error.name !== 'AbortError') {
+      $('#searchStatus').textContent = error instanceof TypeError ? '네트워크 연결을 확인해주세요.'
+        : error instanceof SyntaxError ? '검색 서버에 연결되지 않았습니다. 앱 서버를 실행해주세요.'
+        : error.message;
+    }
   }
 }
 $('#searchForm').onsubmit = event => {
@@ -341,3 +398,11 @@ previewCal(); applyCal(calibration?.scale || 1); render();
   function liquidRender(){const p=Number(level.value)/100,m=Math.max(0,Number(maxMl.value)||0);const ratio=cupShape.value==='taper'?(.45*p+.55*p*p):p;const ml=Math.round(m*ratio*10)/10;document.querySelector('#currentMl').value=ml;document.querySelector('#volumeText').textContent=ml+' mL';document.querySelector('#levelPercent').textContent=level.value+'%';document.querySelector('#levelLine').style.bottom=level.value+'%'}
   [level,maxMl,cupShape].forEach(x=>x.addEventListener('input',liquidRender));liquidRender();
   document.querySelector('#startCamera').onclick=async()=>{const err=document.querySelector('#cameraError');try{const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});const v=document.querySelector('#camera');v.srcObject=stream;await v.play();document.querySelector('#cameraWrap').classList.add('live')}catch(e){err.textContent='카메라 권한을 확인해주세요. HTTPS 환경에서만 사용할 수 있습니다.'}};
+
+const APP_VERSION = 'v1.0.0';
+document.querySelectorAll('#appVersion, #appVersionFooter').forEach(el => el.textContent = APP_VERSION);
+// Placeholder pages - replace with real, published policy/terms URLs before release.
+for (const [id, label] of [['privacyLink', '개인정보처리방침'], ['termsLink', '이용약관']]) {
+  const link = $('#' + id);
+  if (link) link.onclick = event => { event.preventDefault(); alert(`${label} 페이지를 준비 중입니다.`); };
+}

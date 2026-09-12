@@ -141,11 +141,57 @@ test('식별 정보에는 핵심 항목만 표시하고, 맛/향은 공식 텍�
   assert.ok(!$('#identityFacts').textContent.includes('맛/향'));
 });
 
+test('맛과 향이 모두 명시된 경우 "맛/향" 한 줄이 아니라 "맛"·"향" 두 줄로 각각 표시한다', async t => {
+  const both = normalize({ ITEM_SEQ: '654', ITEM_NAME: '시험 씹어먹는정', ENTP_NAME: '시험회사', DRUG_SHAPE: '원형', LENG_LONG: '10', LENG_SHORT: '10', THICK: '4', CHART: '단맛이 나는 딸기향의 밝은 분홍색 씹어먹는 정제' });
+  const { $, input, submit } = setup(t, async () => Response.json(payload([both])));
+  input('#query', '시험약'); await submit(); $('#results button').click();
+  const text = $('#identityFacts').textContent;
+  assert.ok(!text.includes('맛/향'), '두 종류가 모두 있으면 결합 행을 쓰지 않는다');
+  assert.ok(text.includes('단맛'));
+  assert.ok(text.includes('딸기향'));
+});
+
 test('색상/성분만으로 맛을 추측하지 않고, "방향" 같은 비관련 단어는 맛/향으로 오인하지 않는다', async t => {
   const noFlavorWord = normalize({ ITEM_SEQ: '321', ITEM_NAME: '시험약', ENTP_NAME: '시험회사', DRUG_SHAPE: '원형', LENG_LONG: '10', LENG_SHORT: '10', THICK: '4', CHART: '흰색의 원형 필름코팅정으로 세로 방향 분할선이 있다', COLOR_CLASS1: '분홍' });
   const { $, input, submit } = setup(t, async () => Response.json(payload([noFlavorWord])));
   input('#query', '시험약'); await submit(); $('#results button').click();
   assert.ok(!$('#identityFacts').textContent.includes('맛/향'));
+});
+
+test('장축·단축·두께가 모두 있으면 "크기" 요약(L × S × T mm)을 먼저 보여주고, 하나라도 없으면 숨긴다', async t => {
+  const { $, input, submit } = setup(t, async () => Response.json(payload([complete, missing])));
+  input('#query', '시험약'); await submit();
+  $('#results').children[0].click();
+  assert.equal($('#sizeSummary').hidden, false);
+  assert.ok($('#sizeSummary').textContent.includes('12 × 10 × 4 mm'));
+  $('#results').children[1].click(); // missing THICK ("3~4" is not a clean number)
+  assert.equal($('#sizeSummary').hidden, true);
+});
+
+test('검색 결과 카드는 제조사·품목번호/모양/색상·장축×단축을 각각 별도 줄로 보여준다', async t => {
+  const { $, input, submit } = setup(t, async () => Response.json(payload([complete])));
+  input('#query', '시험약'); await submit();
+  const metaLines = [...$('#results .result-copy').querySelectorAll('.r-meta')].map(el => el.textContent);
+  assert.ok(metaLines.some(t => t === complete.company), '제조사가 별도 줄에 있어야 한다');
+  assert.ok(metaLines.some(t => t.includes(complete.id) && t.includes(complete.shape)), '품목번호·모양·색상 줄');
+  assert.ok(metaLines.some(t => t.includes(`${complete.long} × ${complete.short} mm`)), '장축 × 단축 줄');
+});
+
+test('네트워크가 끊기면 상단 배너가 나타나고, 복구되면 사라진다', async t => {
+  const { $, window } = setup(t);
+  assert.equal($('#networkBanner').hidden, true);
+  window.dispatchEvent(new window.Event('offline'));
+  assert.equal($('#networkBanner').hidden, false);
+  window.dispatchEvent(new window.Event('online'));
+  assert.equal($('#networkBanner').hidden, true);
+});
+
+test('앱 버전과 개인정보처리방침·이용약관 링크가 표시된다', async t => {
+  const { $ } = setup(t);
+  assert.ok($('#appVersion').textContent.length > 0);
+  assert.ok($('#appVersionFooter').textContent.length > 0);
+  assert.ok($('#privacyLink'));
+  assert.ok($('#termsLink'));
 });
 
 test('2D/3D를 전환할 수 있고, 회전 슬라이더·앞/옆/뒤 버튼은 더 이상 존재하지 않는다(드래그 전용 조작)', async t => {
