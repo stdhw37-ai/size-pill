@@ -12,12 +12,13 @@
   <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js"}}</script>
   <style>
     :root{
-      --ink:#16211d;--muted:#5c6a65;--green:#123a2f;--green-dark:#0c2a22;--mint:#e2f3ec;--line:#e2e8e4;
-      --paper:#f6f8f6;--white:#fff;--accent:#e2574a;--danger-bg:#fff1ef;--danger-line:#f3c2b8;--danger-ink:#7d3226;
-      --shadow:0 10px 26px rgba(16,42,35,.09);--shadow-sm:0 4px 12px rgba(16,42,35,.07);--ppmm:3.78;
-      --r-lg:20px;--r-md:14px;--r-sm:10px;--tap:48px;--gap:14px;
+      --ink:#16211d;--muted:#5c6a65;--green:#123a2f;--green-dark:#0c2a22;--mint:#e2f3ec;--line:#e5eae6;
+      --paper:#f7f8f7;--white:#fff;--accent:#e2574a;--danger-bg:#fff1ef;--danger-line:#f3c2b8;--danger-ink:#7d3226;
+      --shadow:0 6px 18px rgba(16,42,35,.07);--shadow-sm:0 2px 8px rgba(16,42,35,.06);--ppmm:3.78;
+      --r-lg:18px;--r-md:14px;--r-sm:10px;--tap:48px;--gap:12px;
       --safe-t:env(safe-area-inset-top,0px);--safe-b:env(safe-area-inset-bottom,0px);
       --safe-l:env(safe-area-inset-left,0px);--safe-r:env(safe-area-inset-right,0px);
+      --nav-h:58px;
     }
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:Pretendard,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent}
@@ -26,104 +27,165 @@
     button:disabled{opacity:.45;cursor:default}
     a{color:var(--green)}
     [hidden]{display:none!important}
-    .app{max-width:1080px;margin:auto;padding:calc(14px + var(--safe-t)) calc(14px + var(--safe-r)) calc(28px + var(--safe-b)) calc(14px + var(--safe-l))}
-    .network-banner{background:#fff4e6;border:1px solid #f0c98a;color:#7a5410;border-radius:var(--r-sm);padding:10px 14px;font-size:.92rem;font-weight:700;margin-bottom:12px;text-align:center}
+    .app{max-width:1160px;margin:auto;padding:calc(10px + var(--safe-t)) calc(16px + var(--safe-r)) calc(var(--nav-h) + 20px + var(--safe-b)) calc(16px + var(--safe-l))}
+    .network-banner{background:#fff4e6;border:1px solid #f0c98a;color:#7a5410;border-radius:var(--r-sm);padding:10px 14px;font-size:.9rem;font-weight:700;margin-bottom:10px;text-align:center}
 
-    /* header */
-    .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
-    .brand{display:flex;gap:10px;align-items:center;min-width:0}
-    .mark{width:36px;height:36px;flex:none;border-radius:11px;background:var(--green);display:grid;place-items:center;box-shadow:var(--shadow-sm)}
-    .mark:after{content:"";width:20px;height:9px;border-radius:99px;background:linear-gradient(90deg,#fff 50%,#8fd7c0 50%);transform:rotate(-35deg)}
+    /* header (shown on every screen) */
+    .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+    .brand{display:flex;gap:9px;align-items:center;min-width:0}
+    .mark{width:32px;height:32px;flex:none;border-radius:10px;background:var(--green);display:grid;place-items:center;box-shadow:var(--shadow-sm)}
+    .mark:after{content:"";width:18px;height:8px;border-radius:99px;background:linear-gradient(90deg,#fff 50%,#8fd7c0 50%);transform:rotate(-35deg)}
     .brand-text{min-width:0}
-    h1{font-size:1.15rem;margin:0;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .app-version{font-size:.76rem;color:var(--muted);font-weight:600}
-    .status{flex:none;font-size:.82rem;color:#1f6a53;background:#e5f5ee;padding:8px 12px;border-radius:99px;font-weight:700}
+    h1{font-size:1.05rem;margin:0;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .app-version{font-size:.72rem;color:var(--muted);font-weight:600}
+    .status{flex:none;font-size:.78rem;color:#1f6a53;background:#e5f5ee;padding:6px 11px;border-radius:99px;font-weight:700}
 
-    /* mode switch */
-    .modebar{display:flex;gap:4px;background:#e9efeb;border-radius:var(--r-md);padding:4px;margin:0 0 14px}
-    .modebar button{flex:1;border:0;background:transparent;min-height:var(--tap);padding:0 14px;border-radius:10px;color:#5c6863;font-weight:750;font-size:.96rem}
-    .modebar button.active{background:#fff;color:var(--green);box-shadow:var(--shadow-sm)}
+    /* screens */
+    .screen{display:block}
+    .back-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .back-btn{border:0;background:none;color:var(--green);font-weight:800;font-size:.96rem;min-height:44px;padding:0 4px 0 0;display:inline-flex;align-items:center;gap:4px}
+    .back-btn:before{content:"‹";font-size:1.4rem;line-height:1}
+    .screen-title{font-size:1rem;font-weight:800;color:var(--ink)}
 
-    /* layout: mobile-first single column, desktop 2-column */
+    /* home */
+    .home-hero{padding:4px 2px 14px}
+    .home-hero h2{margin:0 0 4px;font-size:1.22rem;letter-spacing:-.03em}
+    .home-hero p{margin:0;color:var(--muted);font-size:.88rem}
+    .home-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+    .home-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:18px 12px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:118px;justify-content:center}
+    .home-card .ic{font-size:1.8rem}
+    .home-card b{font-size:.94rem;letter-spacing:-.02em}
+    .home-card.primary{background:var(--green);border-color:var(--green);color:#fff}
+    .home-card.primary b{color:#fff}
+    .home-card .desc,.home-card .arrow{display:none}
+    .home-section-title{font-size:.84rem;font-weight:800;color:#4c7c6c;letter-spacing:.02em;margin:0 0 9px}
+    .recent-row{display:flex;gap:9px;overflow-x:auto;padding:2px 2px 10px;margin-bottom:6px}
+    .recent-chip{flex:none;background:var(--white);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 14px;min-height:var(--tap);display:flex;flex-direction:column;justify-content:center;gap:2px;text-align:left;max-width:170px}
+    .recent-chip b{font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+    .recent-chip small{color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+
+    /* bottom nav: mobile/app only (hidden ≥768px, see the tablet/desktop block below) */
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#fff;border-top:1px solid var(--line);display:flex;align-items:stretch;padding-bottom:var(--safe-b);box-shadow:0 -4px 16px rgba(16,42,35,.06)}
+    .bottom-nav button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:var(--nav-h);color:#7c8783;font-size:.72rem;font-weight:700}
+    .bottom-nav button .nav-ic{font-size:1.25rem;line-height:1}
+    .bottom-nav button.active{color:var(--green)}
+    .bottom-nav .nav-primary{position:relative}
+    .bottom-nav .nav-primary .nav-ic{width:46px;height:46px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;margin-top:-14px;box-shadow:0 6px 14px rgba(18,55,47,.3);font-size:1.3rem}
+    .bottom-nav .nav-primary.active .nav-ic{background:var(--green-dark)}
+    .bottom-nav .nav-primary span:last-child{color:var(--green);font-weight:800}
+
+    /* top nav: tablet/desktop only (a plain header row, not fixed - see breakpoint block below) */
+    .top-nav{display:none}
+
+    /* generic layout */
     .grid{display:flex;flex-direction:column;gap:var(--gap)}
-    .card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:18px}
-    .eyebrow{font-size:.8rem;color:#4c7c6c;font-weight:800;letter-spacing:.04em;margin-bottom:6px}
-    .controls h2,.stage h2{font-size:1.28rem;letter-spacing:-.03em;margin:0 0 6px}
-    .lead{margin:0 0 16px;color:var(--muted);font-size:.94rem;line-height:1.5}
+    .card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:16px}
+    .eyebrow{font-size:.78rem;color:#4c7c6c;font-weight:800;letter-spacing:.03em;margin-bottom:5px}
+    .controls h2,.stage h2{font-size:1.15rem;letter-spacing:-.02em;margin:0 0 5px}
+    .lead{margin:0 0 14px;color:var(--muted);font-size:.88rem;line-height:1.5}
 
     /* search */
-    .search-form label{display:block;font-size:.86rem;font-weight:700;margin-bottom:7px}
+    .search-form label{display:block;font-size:.84rem;font-weight:700;margin-bottom:7px}
     .search-row{display:flex;gap:8px}
     .search-row input{min-width:0;width:100%;height:var(--tap);padding:0 14px;border:1px solid #cfdad6;background:#fbfdfc;border-radius:var(--r-sm);font-size:1rem}
     .search-row input:focus,.search-filters input:focus,.inputwrap input:focus{outline:none;border-color:#438e77;box-shadow:0 0 0 3px rgba(67,142,119,.15)}
-    .search-row button,.pagination button,.text-btn-solid{border:0;border-radius:var(--r-sm);background:var(--green);color:#fff;min-height:var(--tap);padding:0 18px;font-weight:750;font-size:.96rem}
-    .search-filters{margin-top:12px;font-size:.9rem}
-    .search-filters summary{cursor:pointer;color:var(--green);font-weight:700;min-height:var(--tap);display:flex;align-items:center}
-    .search-filters label{margin-top:10px;font-size:.86rem;font-weight:700}
-    .search-filters input{width:100%;min-height:var(--tap);padding:0 12px;border:1px solid var(--line);border-radius:var(--r-sm);font-size:1rem}
-    .cal-note{font-size:.88rem;color:var(--muted);line-height:1.5;margin:8px 0 0}
+    .search-row button,.pagination button{border:0;border-radius:var(--r-sm);background:var(--green);color:#fff;min-height:var(--tap);padding:0 18px;font-weight:750;font-size:.96rem}
+    .search-filters{margin-top:10px;font-size:.88rem}
+    .search-filters summary{cursor:pointer;color:var(--green);font-weight:700;min-height:44px;display:flex;align-items:center}
+    .search-filters label{margin-top:10px;font-size:.84rem;font-weight:700}
+    .search-filters input{width:100%;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r-sm);font-size:1rem}
+    .cal-note{font-size:.86rem;color:var(--muted);line-height:1.5;margin:8px 0 0}
+    .manual-link{border:0;background:none;color:var(--green);padding:10px 0;text-decoration:underline;font-weight:700;font-size:.9rem;min-height:44px;display:inline-flex;align-items:center}
 
     /* search results */
-    .results{display:grid;gap:9px;margin-top:12px;max-height:420px;overflow:auto;padding-right:2px}
-    .result{display:flex;align-items:center;gap:12px;min-width:0;background:#f7faf8;border:2px solid var(--line);padding:12px;text-align:left;border-radius:var(--r-md);min-height:var(--tap)}
-    .result[aria-pressed="true"]{border-color:var(--green);background:var(--mint);box-shadow:0 0 0 1px var(--green) inset}
-    .result-photo{width:56px;height:56px;object-fit:contain;flex:none;background:#fff;border-radius:10px;border:1px solid var(--line)}
-    .result-copy{min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
-    .result-copy b{font-size:1rem;font-weight:800;line-height:1.35}
-    .result-copy .r-meta{font-size:.84rem;color:var(--muted);line-height:1.45}
-    .pagination{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:.9rem;font-weight:700}
+    /* Normal page flow, no inner scrollbox - a scroll-inside-a-scroll was awkward to operate with
+       a thumb. Results are revealed in batches of 5 via #showMoreResults instead (see app.js). */
+    .results{display:grid;gap:7px;margin-top:10px}
+    .show-more{width:100%;border:1px solid var(--line);background:#fff;color:var(--green);min-height:44px;border-radius:var(--r-md);font-weight:750;font-size:.9rem;margin-top:4px}
+    .result{display:flex;align-items:center;gap:10px;min-width:0;background:#f7faf8;border:2px solid var(--line);padding:8px;text-align:left;border-radius:var(--r-md);min-height:var(--tap)}
+    .result[aria-pressed="true"]{border-color:var(--green);background:var(--mint)}
+    .result-photo{width:42px;height:42px;object-fit:contain;flex:none;background:#fff;border-radius:8px;border:1px solid var(--line)}
+    .result-copy{min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:1px}
+    .result-copy b{font-size:.94rem;font-weight:800;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .result-copy .r-meta{font-size:.78rem;color:var(--muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pagination{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:.88rem;font-weight:700}
     .pagination button{padding:0 16px}
-    .selection{margin:16px 0 4px;padding:12px 14px;background:var(--mint);border-radius:var(--r-md);font-size:.92rem;line-height:1.5;overflow-wrap:anywhere;font-weight:600;color:#0f4535}
-    .text-button{border:0;background:none;color:var(--green);padding:10px 0;text-decoration:underline;font-weight:700;font-size:.92rem;min-height:var(--tap);display:inline-flex;align-items:center}
 
-    /* medicine details */
-    .medicine-details{margin:14px 0 4px;font-size:.92rem;line-height:1.6}
-    .medicine-details summary{cursor:pointer;color:var(--green);font-weight:700;min-height:var(--tap);display:flex;align-items:center}
-    .medicine-photo{margin:0 0 12px}
-    .medicine-photo img{display:block;width:100%;max-height:190px;object-fit:contain;background:#f7faf8;border-radius:var(--r-md);border:1px solid var(--line)}
-    .medicine-photo figcaption,.image-fallback{color:var(--muted);font-size:.82rem;margin-top:6px}
-    .size-summary{background:var(--mint);border-radius:var(--r-md);padding:14px;margin:12px 0;text-align:center}
-    .size-summary strong{display:block;font-size:1.3rem;letter-spacing:-.02em;color:var(--green)}
-    .size-summary small{color:#3d6c5c;font-size:.82rem}
-    .medicine-facts{margin:10px 0}
-    .medicine-facts div{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:9px 0;border-bottom:1px solid var(--line);align-items:baseline}
-    .medicine-facts dt{color:var(--muted);font-size:.86rem;font-weight:700}
-    .medicine-facts dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap;font-size:.94rem}
+    /* result screen product header - a compact photo+text row instead of a tall stack, so the 3D
+       model is reached without a long scroll. The photo is a small click-to-enlarge thumbnail; the
+       same #medicineImage element is reused by the photo modal, just sized down here. */
+    .result-header{margin-bottom:8px}
+    .result-summary-row{display:flex;align-items:flex-start;gap:12px}
+    .result-summary-text{min-width:0;flex:1}
+    .result-header .rh-name{font-size:1.05rem;font-weight:800;letter-spacing:-.02em;margin:0;overflow-wrap:anywhere}
+    .result-header .rh-company{color:var(--muted);font-size:.82rem;margin:2px 0 0}
+    .quick-facts{margin:6px 0 0;font-size:.8rem;font-weight:700;color:#1f6a53;background:var(--mint);display:inline-block;padding:4px 10px;border-radius:99px}
+    .quick-photo{display:block;flex:none;width:76px;height:76px;border:1px solid var(--line);background:#f7faf8;padding:0;border-radius:var(--r-md);overflow:hidden;position:relative}
+    .quick-photo #medicineImage{width:100%;height:100%}
+    .quick-photo #medicineImage img{display:block;width:100%;height:100%;object-fit:contain;background:#f7faf8}
+    .quick-photo .image-fallback{display:block;padding:6px;color:var(--muted);font-size:.68rem;line-height:1.3}
+
+    /* full-size photo modal */
+    .photo-modal{border:0;border-radius:var(--r-lg);padding:16px;max-width:min(92vw,560px);background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+    .photo-modal::backdrop{background:rgba(10,25,20,.6)}
+    .photo-modal-close{position:absolute;top:10px;right:10px;border:0;background:#eef2ef;color:var(--ink);width:36px;height:36px;border-radius:50%;font-size:1rem}
+    .photo-modal-image img{display:block;width:100%;max-height:70vh;object-fit:contain;border-radius:var(--r-md)}
+    .photo-modal-caption{margin:10px 0 0;color:var(--muted);font-size:.82rem;text-align:center}
+
+    /* medicine details accordion */
+    details.section-accordion{border:1px solid var(--line);border-radius:var(--r-md);margin-top:10px;overflow:hidden}
+    details.section-accordion summary{cursor:pointer;color:var(--green);font-weight:750;min-height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;list-style:none;font-size:.92rem;background:#fbfdfc}
+    details.section-accordion summary::-webkit-details-marker{display:none}
+    details.section-accordion summary:after{content:"▾";transition:transform .15s;color:#9caaa5}
+    details.section-accordion[open] summary:after{transform:rotate(180deg)}
+    details.section-accordion .acc-body{padding:12px 14px 14px}
+    .medicine-details{font-size:.9rem;line-height:1.6}
+    .medicine-details summary{cursor:pointer;color:var(--green);font-weight:700;min-height:44px;display:flex;align-items:center}
+    .medicine-photo{margin:0 0 10px}
+    .medicine-photo img{display:block;width:100%;max-height:170px;object-fit:contain;background:#f7faf8;border-radius:var(--r-md);border:1px solid var(--line)}
+    .medicine-photo figcaption,.image-fallback{color:var(--muted);font-size:.8rem;margin-top:6px}
+    .medicine-facts{margin:0}
+    .medicine-facts div{display:grid;grid-template-columns:108px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px solid var(--line);align-items:baseline}
+    .medicine-facts div:last-child{border-bottom:0}
+    .medicine-facts dt{color:var(--muted);font-size:.82rem;font-weight:700}
+    .medicine-facts dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap;font-size:.9rem}
     .mark-image{max-width:100px;max-height:60px;object-fit:contain}
-    .medicine-details a{font-size:.88rem}
+    .medicine-details a{font-size:.86rem}
 
-    /* stage (2D/3D) */
+    /* size headline - compact single line, not a tall standalone card */
+    .size-summary{margin:8px 0 0}
+    .size-summary strong{font-size:1.05rem;letter-spacing:-.01em;color:var(--green)}
+    .size-summary small{color:#3d6c5c;font-size:.78rem;margin-left:6px}
+
+    /* stage (3D tablet viewer - the sole size/shape view; see #view3d below) */
     .stage{min-height:auto;display:flex;flex-direction:column}
-    .stage-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
     .tabbar{display:flex;gap:4px;background:#eef2ef;padding:4px;border-radius:var(--r-md)}
-    .tabbar button{border:0;background:transparent;min-height:44px;padding:0 14px;border-radius:9px;color:#5c6863;font-size:.92rem;font-weight:750}
+    .tabbar button{border:0;background:transparent;min-height:42px;padding:0 13px;border-radius:9px;color:#5c6863;font-size:.88rem;font-weight:750}
     .tabbar button.active{background:#fff;color:var(--green);box-shadow:var(--shadow-sm)}
-    .canvas{position:relative;flex:1;min-height:280px;border-radius:var(--r-md);background-color:#f7faf8;background-image:linear-gradient(#e8efec 1px,transparent 1px),linear-gradient(90deg,#e8efec 1px,transparent 1px);background-size:calc(var(--ppmm)*5px) calc(var(--ppmm)*5px);margin-top:14px;display:grid;place-items:center;overflow:auto}
-    .pill-wrap{padding:20px;text-align:center}
-    .pill{max-width:none;transition:none;width:calc(var(--long)*var(--ppmm)*1px);height:calc(var(--short)*var(--ppmm)*1px);background:linear-gradient(145deg,#fff 5%,#eef2f0 64%,#d2dad6);border:1px solid #aeb9b5;box-shadow:inset -4px -5px 8px rgba(45,60,55,.12),inset 4px 4px 7px #fff,0 13px 22px rgba(29,55,47,.15);display:grid;place-items:center;position:relative}
-    .pill.oval{border-radius:50%}
-    .pill.capsule{border-radius:999px}
-    .pill.round{border-radius:50%;width:calc(var(--short)*var(--ppmm)*1px)}
-    .pill:before{content:"";position:absolute;width:1px;height:62%;background:rgba(120,132,128,.33)}
-    .pill.round:before{width:60%;height:1px}
-    .measure{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap}
-    .measure span{background:#edf5f2;color:#1f5544;padding:8px 12px;border-radius:99px;font-size:.86rem;font-weight:750}
     .view3d{display:flex;flex-direction:column}
-    .scene3d{flex:1;min-height:300px;border-radius:var(--r-md);background:radial-gradient(120% 120% at 50% 20%,#f7f5f1 0%,#eeece6 55%,#e2ded6 100%);margin-top:12px;overflow:hidden;touch-action:none;cursor:grab;position:relative}
+    /* Capped well below the old 42vh/no-cap sizing - a small tablet doesn't need a viewport that
+       fills most of the screen, and a shorter viewport is most of how this screen's scroll shrank. */
+    .scene3d{flex:1;min-height:320px;max-height:420px;border-radius:var(--r-md);background:radial-gradient(120% 120% at 50% 20%,#f7f5f1 0%,#eeece6 55%,#e2ded6 100%);margin-top:10px;overflow:hidden;touch-action:none;cursor:grab;position:relative}
     .scene3d:active{cursor:grabbing}
     .scene3d canvas{display:block;width:100%;height:100%}
-    .scene3d-hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(12,35,29,.6);color:#fff;font-size:.78rem;padding:7px 13px;border-radius:99px;pointer-events:none;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
+    .scene3d-hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(12,35,29,.6);color:#fff;font-size:.76rem;padding:6px 12px;border-radius:99px;pointer-events:none;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
 
-    .warning{margin-top:16px;display:flex;gap:10px;align-items:flex-start;color:#6d5b27;background:#fff9e8;border:1px solid #f0dfad;border-radius:var(--r-md);padding:13px;font-size:.86rem;line-height:1.5}
-    .warning strong{font-size:1.05rem}
-    .card-footnote{margin-top:12px;text-align:center;color:#8b9791;font-size:.78rem}
+    /* flavor/aroma badge - only rendered when official text literally names a taste/scent; a
+       distinct, labeled row instead of being folded into the shape/color quick-facts line. */
+    .flavor-badge{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin:10px 0}
+    .flavor-badge .flavor-label{font-size:.78rem;color:var(--muted);font-weight:700}
+    .flavor-chip{background:#fff4e0;color:#8a5a12;border:1px solid #f0d9ad;border-radius:99px;padding:4px 11px;font-size:.8rem;font-weight:750}
+
+    .warning{margin-top:12px;display:flex;gap:9px;align-items:flex-start;color:#6d5b27;background:#fff9e8;border:1px solid #f0dfad;border-radius:var(--r-md);padding:12px;font-size:.82rem;line-height:1.5}
+    .warning strong{font-size:1rem}
+    .card-footnote{margin-top:10px;text-align:center;color:#8b9791;font-size:.76rem}
 
     /* calibration */
-    .divider{height:1px;background:var(--line);margin:18px 0}
-    .cal-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
-    .cal-head b{font-size:1rem}
-    .cal-head button{border:1px solid var(--line);background:#fff;color:var(--green);font-size:.88rem;font-weight:800;min-height:44px;padding:0 14px;border-radius:var(--r-sm)}
-    .cal-panel{display:none;margin-top:14px;background:#f5faf8;border-radius:var(--r-md);padding:14px}
+    .cal-status-card{border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fbfdfc}
+    .cal-status-text{margin:0;font-size:.86rem;font-weight:700;color:var(--ink)}
+    .cal-status-text.ok{color:#1f6a53}
+    #toggleCal{border:1px solid var(--green);background:#fff;color:var(--green);font-size:.84rem;font-weight:800;min-height:40px;padding:0 13px;border-radius:var(--r-sm);flex:none}
+    .cal-panel{display:none;margin-top:10px;background:#f5faf8;border-radius:var(--r-md);padding:14px}
     .cal-panel.open{display:block}
     .cal-scroll{overflow-x:auto;padding:6px 0 14px}
     .cal-reference{width:204.02px;border-left:2px solid var(--green);border-right:2px solid var(--green);border-bottom:2px solid var(--green);height:40px;text-align:center;white-space:nowrap;font-size:.76rem;padding-top:10px}
@@ -131,73 +193,133 @@
     .cal-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.86rem;color:var(--muted)}
     .cal-actions button{border:0;background:var(--green);color:#fff;border-radius:var(--r-sm);min-height:44px;padding:0 16px;font-weight:750}
 
-    /* dimension fields (manual entry) */
-    .fields{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}
-    .field label{display:block;color:#4c5955;font-size:.82rem;font-weight:700;margin:0 0 6px 2px}
+    /* manual dimension entry (moved into the result screen, collapsible) */
+    .fields{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+    .field label{display:block;color:#4c5955;font-size:.8rem;font-weight:700;margin:0 0 6px 2px}
     .inputwrap{position:relative}
-    .inputwrap input{width:100%;height:52px;border:1px solid #cfdad6;background:#fbfdfc;border-radius:var(--r-sm);padding:0 32px 0 12px;font-size:1.05rem;font-weight:750;outline:none}
-    .unit{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#7d8985;font-size:.78rem}
-    .shape-row{display:flex;gap:8px;margin-top:14px}
-    .shape{flex:1;border:1px solid var(--line);background:#fff;border-radius:var(--r-sm);min-height:var(--tap);padding:6px 4px;color:#5c6863;font-size:.84rem}
+    .inputwrap input{width:100%;height:50px;border:1px solid #cfdad6;background:#fbfdfc;border-radius:var(--r-sm);padding:0 30px 0 12px;font-size:1.02rem;font-weight:750;outline:none}
+    .unit{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#7d8985;font-size:.76rem}
+    .shape-row{display:flex;gap:7px;margin-top:12px}
+    .shape{flex:1;border:1px solid var(--line);background:#fff;border-radius:var(--r-sm);min-height:44px;padding:6px 4px;color:#5c6863;font-size:.82rem}
     .shape.active{background:var(--mint);border-color:#76b9a4;color:var(--green);font-weight:800}
-    .shape i{display:block;margin:0 auto 5px;width:22px;height:12px;border:2px solid currentColor}
+    .shape i{display:block;margin:0 auto 4px;width:20px;height:11px;border:2px solid currentColor}
     .shape[data-shape="oval"] i{border-radius:50%}
     .shape[data-shape="capsule"] i{border-radius:99px}
-    .shape[data-shape="round"] i{width:15px;height:15px;border-radius:50%}
+    .shape[data-shape="round"] i{width:14px;height:14px;border-radius:50%}
 
     /* liquid mode */
     .liquid-tool{display:none}
     .liquid-tool.active{display:flex}
     .pill-tool.hidden{display:none}
     .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .field span{display:block;color:#4c5955;font-size:.82rem;font-weight:700;margin:0 0 6px 2px}
-    .select,.num{width:100%;height:52px;border:1px solid #cfdad6;border-radius:var(--r-sm);background:#fbfdfc;padding:0 12px;font-size:1rem}
-    .slider-label{display:flex;justify-content:space-between;margin-top:18px;font-size:.9rem;font-weight:750}
+    .field span{display:block;color:#4c5955;font-size:.8rem;font-weight:700;margin:0 0 6px 2px}
+    .select,.num{width:100%;height:50px;border:1px solid #cfdad6;border-radius:var(--r-sm);background:#fbfdfc;padding:0 12px;font-size:1rem}
+    .slider-label{display:flex;justify-content:space-between;margin-top:16px;font-size:.88rem;font-weight:750}
     .liquid-controls input[type=range]{width:100%;height:44px;accent-color:var(--accent);margin:8px 0}
-    .tip{font-size:.86rem;line-height:1.55;color:var(--muted);background:#f3f7f5;border-radius:var(--r-md);padding:13px;margin-top:14px}
+    .tip{font-size:.84rem;line-height:1.55;color:var(--muted);background:#f3f7f5;border-radius:var(--r-md);padding:12px;margin-top:12px}
     .danger{color:var(--danger-ink);background:var(--danger-bg);border:1px solid var(--danger-line)}
-    .camera-wrap{position:relative;min-height:400px;border-radius:var(--r-lg);overflow:hidden;background:#17211e;display:grid;place-items:center}
+    .camera-wrap{position:relative;min-height:320px;max-height:48vh;border-radius:var(--r-lg);overflow:hidden;background:#17211e;display:grid;place-items:center}
     .camera-wrap video{position:absolute;width:100%;height:100%;object-fit:cover}
-    .camera-placeholder{color:#dce8e4;text-align:center;padding:26px;z-index:1}
-    .camera-placeholder b{display:block;font-size:1.05rem;margin-bottom:6px}
-    .camera-permission-note{display:block;font-size:.82rem;color:#a9beb7;margin-top:6px}
+    .camera-placeholder{color:#dce8e4;text-align:center;padding:24px;z-index:1}
+    .camera-placeholder b{display:block;font-size:1rem;margin-bottom:6px}
+    .camera-permission-note{display:block;font-size:.8rem;color:#a9beb7;margin-top:6px}
     .camera-placeholder button{border:0;background:var(--accent);color:#fff;border-radius:var(--r-sm);min-height:var(--tap);padding:0 18px;font-weight:800;margin-top:14px}
     .cup-guide{display:none;position:absolute;z-index:2;left:24%;right:24%;top:15%;bottom:12%;border:2px dashed rgba(255,255,255,.8);border-radius:22% 22% 12% 12%}
     .camera-wrap.live .cup-guide{display:block}
     .camera-wrap.live .camera-placeholder{display:none}
     .level-line{position:absolute;left:-16%;right:-16%;bottom:40%;height:3px;background:#ffdb70}
-    .level-line:after{content:"액면선";position:absolute;right:0;bottom:7px;color:#ffebad;font-size:.76rem;font-weight:800}
-    .volume-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(12,35,29,.82);color:#fff;border-radius:var(--r-md);padding:12px 16px;text-align:center;backdrop-filter:blur(8px)}
-    .volume-badge strong{font-size:1.5rem}
-    .camera-error{color:#ffcfbf;font-size:.84rem;margin-top:8px}
+    .level-line:after{content:"액면선";position:absolute;right:0;bottom:7px;color:#ffebad;font-size:.74rem;font-weight:800}
+    .volume-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(12,35,29,.82);color:#fff;border-radius:var(--r-md);padding:11px 15px;text-align:center;backdrop-filter:blur(8px)}
+    .volume-badge strong{font-size:1.4rem}
+    .camera-error{color:#ffcfbf;font-size:.82rem;margin-top:8px}
 
-    /* app footer: legal placeholders, version */
-    .app-footer{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);text-align:center;color:var(--muted);font-size:.82rem;line-height:1.8}
-    .app-footer nav{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-bottom:4px}
-    .app-footer a{color:var(--muted);text-decoration:underline}
+    /* settings */
+    .settings-list{display:flex;flex-direction:column;gap:10px}
+    .settings-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px;background:#fff;border:1px solid var(--line);border-radius:var(--r-md);min-height:var(--tap);text-align:left}
+    .settings-row b{font-size:.92rem;display:block}
+    .settings-row small{color:var(--muted);font-size:.78rem}
+    .settings-row .arrow{color:#9caaa5}
+    .settings-about{text-align:center;color:var(--muted);font-size:.8rem;margin-top:18px;line-height:1.8}
 
-    /* ≥ 860px: two-column desktop layout */
-    @media(min-width:720px){
-      .app{padding-left:calc(20px + var(--safe-l));padding-right:calc(20px + var(--safe-r));padding-top:calc(20px + var(--safe-t))}
-      .grid{flex-direction:row;align-items:flex-start}
-      .grid.pill-tool{gap:20px}
-      .controls{flex:0 0 400px}
-      .stage{flex:1;min-width:0}
-      .card{padding:24px}
-      h1{font-size:1.28rem}
-      .canvas{min-height:400px}
-      .camera-wrap{min-height:500px}
+    /* ============================================================
+       Responsive strategy - three genuinely different shells, not
+       one layout stretched by media queries:
+         < 768px         : Mobile / Capacitor app shell (bottom nav, single-column, step-through)
+         768px – 1023px  : Tablet (top nav; pill search/result still steps through until it
+                            comfortably fits two columns at ≥900px)
+         >= 1024px       : Desktop web shell (top nav, centered max-width container, spacious
+                            2-column layouts, larger Home)
+       All three share the exact same DOM/JS/API - only presentation changes here.
+       ============================================================ */
+
+    /* ---- < 768px: mobile/app shell (this is the default above; nothing extra needed here) ---- */
+    @media(max-width:767px){
+      /* pill mode steps through search → result, one full-screen panel at a time */
+      #pillTool[data-step="search"] .stage{display:none}
+      #pillTool[data-step="result"] .controls{display:none}
+    }
+
+    /* ---- >= 768px: shared "not mobile" shell - top nav replaces bottom nav ---- */
+    @media(min-width:768px){
+      .app{padding-left:calc(24px + var(--safe-l));padding-right:calc(24px + var(--safe-r));padding-top:calc(18px + var(--safe-t));padding-bottom:calc(32px + var(--safe-b))}
+      .bottom-nav{display:none}
+      .top-nav{display:flex;gap:2px;background:#eef2ef;padding:4px;border-radius:var(--r-md)}
+      .top-nav button{border:0;background:transparent;padding:0 15px;height:38px;border-radius:8px;font-size:.88rem;font-weight:750;color:#5c6863;white-space:nowrap}
+      .top-nav button.active{background:#fff;color:var(--green);box-shadow:var(--shadow-sm)}
+      .top{margin-bottom:22px}
+      h1{font-size:1.12rem}
+      /* Only the "→ 홈" back links are redundant once the top nav's own 홈 link is visible.
+         The result screen's "→ 검색" back link stays until 900px, where 2-column removes the need
+         for it by showing search and result at the same time - see the >=900px block below. */
+      .back-row.to-home{display:none}
+      .card{padding:22px}
+      .home-hero{text-align:center;padding:10px 0 26px}
+      .home-hero h2{font-size:1.7rem;margin-bottom:6px}
+      .home-hero p{font-size:1rem}
+      .home-cards{max-width:640px;margin:0 auto 28px;gap:16px}
+      .home-card{min-height:160px;padding:24px 18px;gap:8px}
+      .home-card .ic{font-size:2.1rem}
+      .home-card b{font-size:1.02rem}
+      #recentSection{max-width:640px;margin:0 auto}
+    }
+
+    /* ---- 768px – 899px: tablet, narrow - top nav shell, but still single-column pill content
+       (two columns would be too cramped between ~340px+340px on a portrait tablet) ---- */
+    @media(min-width:768px) and (max-width:899px){
+      #pillTool[data-step="search"] .stage{display:none}
+      #pillTool[data-step="result"] .controls{display:none}
+    }
+
+    /* ---- >= 900px: enough width for the search/result 2-column layout (tablet landscape and up) ---- */
+    @media(min-width:900px){
+      .back-row{display:none} /* both panels are always visible side by side, so stepping "back" is moot */
+      #pillTool{flex-direction:row;align-items:flex-start;gap:20px}
+      #pillTool .controls{flex:0 0 360px}
+      #pillTool .stage{flex:1;min-width:0}
+      .scene3d{min-height:420px;max-height:520px}
       .liquid-tool.active{flex-direction:row;gap:20px}
-      .liquid-controls{flex:0 0 380px}
+      .liquid-controls{flex:0 0 360px}
       .camera-card{flex:1;min-width:0}
+      .camera-wrap{min-height:420px;max-height:none}
     }
-    @media(min-width:960px){
-      .controls h2,.stage h2{font-size:1.5rem}
-    }
-    @media(max-width:390px){
-      .result-copy b{font-size:.94rem}
-      .fields{gap:7px}
-      h1{font-size:1.05rem}
+
+    /* ---- >= 1024px: full desktop web treatment - spacious centered layout, Home uses the wide
+       screen actively instead of just being a scaled-up phone screen ---- */
+    @media(min-width:1024px){
+      .app{padding-left:calc(40px + var(--safe-l));padding-right:calc(40px + var(--safe-r));padding-top:calc(28px + var(--safe-t))}
+      .controls h2,.stage h2{font-size:1.35rem}
+      .home-hero h2{font-size:2.1rem}
+      .home-hero p{font-size:1.08rem}
+      .home-cards{max-width:920px;gap:26px}
+      .home-card{min-height:230px;padding:34px 28px;gap:10px}
+      .home-card .ic{font-size:2.5rem}
+      .home-card b{font-size:1.2rem}
+      .home-card .desc{display:block;font-size:.88rem;font-weight:500;line-height:1.5;opacity:.85;max-width:220px}
+      .home-card.primary .desc{opacity:.92}
+      .home-card .arrow{display:block;margin-top:2px;font-size:1.25rem;font-weight:800}
+      #recentSection{max-width:920px}
+      #pillTool .controls{flex:0 0 400px}
+      .camera-wrap{min-height:460px}
     }
   </style>
 </head>
@@ -206,61 +328,126 @@
   <div id="networkBanner" class="network-banner" role="status" hidden>네트워크 연결을 확인해주세요.</div>
   <header class="top">
     <div class="brand"><div class="mark" aria-hidden="true"></div><div class="brand-text"><h1>알약 실물크기 측정기</h1><span class="app-version" id="appVersion">v1.0.0</span></div></div>
+    <!-- Desktop-only top navigation. Same [data-mode] attribute the mobile bottom nav and Home
+         cards use, so app.js's one generalized handler drives every nav surface - no extra JS. -->
+    <nav class="top-nav" aria-label="주요 메뉴">
+      <button type="button" data-mode="home">홈</button>
+      <button type="button" data-mode="pill">알약 실물크기</button>
+      <button type="button" data-mode="liquid">액체 용량</button>
+      <button type="button" data-mode="settings">설정</button>
+    </nav>
     <div class="status" id="status">화면 보정 필요</div>
   </header>
-  <nav class="modebar" aria-label="측정 도구"><button class="active" data-mode="pill">알약 실물크기</button><button data-mode="liquid">액체 용량</button></nav>
 
-  <!-- Mobile order: 1)검색 2)제품 선택 3)핵심 정보 4)2D/3D 비교 - all four live inside .controls (search+results+details)
-       followed by .stage (2D/3D); on desktop (≥860px) the two become a side-by-side row via the media query above. -->
-  <div class="grid pill-tool" id="pillTool">
+  <!-- HOME: the app's landing screen. Feature cards carry the same data-mode attribute the old
+       pill/liquid toggle used, so the single generalized handler in app.js drives both the
+       screen switch and the existing #pillTool/#liquidTool show/hide it always has. -->
+  <section class="screen" id="screenHome">
+    <div class="home-hero">
+      <h2>약 실물크기</h2>
+      <p>약의 실제 크기를 화면에서 확인하세요</p>
+    </div>
+    <div class="home-cards">
+      <button class="home-card primary" type="button" data-mode="pill"><span class="ic">💊</span><b>알약 실물크기<br>확인하기</b><span class="desc">약을 검색해서 실제 크기와 형태를 확인하세요</span><span class="arrow">→</span></button>
+      <button class="home-card" type="button" data-mode="liquid"><span class="ic">💧</span><b>액체 용량<br>확인하기</b><span class="desc">카메라로 컵의 액체 높이를 어림해보세요</span><span class="arrow">→</span></button>
+    </div>
+    <div id="recentSection" hidden>
+      <div class="home-section-title">최근 확인한 약</div>
+      <div class="recent-row" id="recentRow"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="screen" id="screenSettings" hidden>
+    <div class="screen-title" style="margin-bottom:14px">설정</div>
+    <div class="settings-list">
+      <button class="settings-row" type="button" id="settingsCalRow"><span><b>화면 크기 보정</b><small id="settingsCalStatus">보정 필요</small></span><span class="arrow">›</span></button>
+      <a class="settings-row" href="#" id="privacyLink"><span><b>개인정보처리방침</b></span><span class="arrow">›</span></a>
+      <a class="settings-row" href="#" id="termsLink"><span><b>이용약관</b></span><span class="arrow">›</span></a>
+    </div>
+    <div class="settings-about">알약 실물크기 측정기<br><span id="appVersionFooter">v1.0.0</span></div>
+  </section>
+
+  <!-- PILL MODE: .controls (search) and .stage (result) - both shown side by side on desktop;
+       on mobile only one is visible at a time, switched by data-step on #pillTool. -->
+  <div class="grid pill-tool hidden" id="pillTool" data-step="search">
     <section class="card controls" aria-labelledby="input-title">
-      <div class="eyebrow">STEP 1 · 의약품 검색</div><h2 id="input-title">어떤 약의 크기가 궁금하세요?</h2><p class="lead">약 이름으로 검색하고 제조사와 함량을 확인해 선택하세요.</p>
+      <div class="back-row to-home"><button class="back-btn" type="button" id="backToHomeFromSearch">홈</button></div>
+      <div class="eyebrow">알약 실물크기</div><h2 id="input-title">어떤 약의 크기가 궁금하세요?</h2>
       <form id="searchForm" class="search-form"><label for="query">의약품 이름</label><div class="search-row"><input id="query" type="search" minlength="2" maxlength="80" placeholder="예: 타이레놀" autocomplete="off"><button type="submit">검색</button></div>
         <details class="search-filters"><summary>업체명·품목일련번호로 검색 조건 추가</summary><label for="companyQuery">업체명</label><input id="companyQuery" maxlength="80" placeholder="제조·수입업체 이름" autocomplete="off"><label for="itemSeqQuery">품목일련번호</label><input id="itemSeqQuery" maxlength="20" pattern="[0-9]+" inputmode="numeric" placeholder="숫자로 입력" autocomplete="off"></details>
       </form>
       <p id="searchStatus" class="cal-note" role="status" aria-live="polite">식약처 낱알식별 정보에 등록된 제품을 검색합니다.</p>
       <div id="results" class="results"></div>
+      <button id="showMoreResults" class="show-more" type="button" hidden>더보기</button>
       <div id="pagination" class="pagination" hidden><button id="prevPage">이전</button><span id="pageLabel"></span><button id="nextPage">다음</button></div>
-      <div id="selection" class="selection" aria-live="polite">직접 입력 예시 · 특정 의약품의 치수가 아닙니다.</div>
-      <section id="medicineDetails" class="medicine-details" aria-label="선택한 의약품 낱알식별 정보" hidden>
-        <figure class="medicine-photo"><div id="medicineImage"></div><figcaption>식약처 제공 제품 사진 · 사진은 실물 크기가 아닙니다.</figcaption></figure>
-        <div id="sizeSummary" class="size-summary" hidden></div>
-        <dl id="identityFacts" class="medicine-facts"></dl>
-        <div id="extraDetails" hidden>
-          <details><summary>성분·허가정보 (제품 허가정보)</summary><p id="permitStatus" role="status"></p><dl id="permitFacts" class="medicine-facts"></dl><a href="https://www.data.go.kr/data/15095677/openapi.do" target="_blank" rel="noopener noreferrer">출처: 의약품 제품 허가정보</a></details>
-          <details><summary>복약정보 (e약은요)</summary><p id="easyStatus" role="status"></p><dl id="easyFacts" class="medicine-facts"></dl><a href="https://www.data.go.kr/data/15075057/openapi.do" target="_blank" rel="noopener noreferrer">출처: e약은요</a></details>
-          <details><summary>추가 품목 정보 보기</summary><dl id="extraFacts" class="medicine-facts"></dl></details>
-          <a href="https://www.data.go.kr/data/15057639/openapi.do" target="_blank" rel="noopener noreferrer">출처: 식품의약품안전처 의약품 낱알식별 정보</a>
-        </div>
-      </section>
-      <button id="manual" class="text-button" type="button">치수 직접 입력</button><p class="cal-note">장축·단축·두께 (mm)</p>
-      <div class="fields">
-        <div class="field"><label for="long">장축</label><div class="inputwrap"><input id="long" type="number" min="1" max="40" step="0.1" value="17.2" inputmode="decimal"><span class="unit">mm</span></div></div>
-        <div class="field"><label for="short">단축</label><div class="inputwrap"><input id="short" type="number" min="1" max="40" step="0.1" value="7.1" inputmode="decimal"><span class="unit">mm</span></div></div>
-        <div class="field"><label for="thick">두께</label><div class="inputwrap"><input id="thick" type="number" min="0.5" max="20" step="0.1" value="5.2" inputmode="decimal"><span class="unit">mm</span></div></div>
-      </div>
-      <div class="shape-row" role="group" aria-label="알약 모양"><button class="shape active" data-shape="oval"><i></i>타원형</button><button class="shape" data-shape="capsule"><i></i>장방형</button><button class="shape" data-shape="round"><i></i>원형</button></div>
-      <div class="divider"></div>
-      <div class="cal-head"><b>화면 크기 보정</b><button id="toggleCal" aria-expanded="false">보정하기</button></div><p class="cal-note">실제 카드의 짧은 변(53.98 mm)을 아래 기준선에 맞춰 보정하세요. 기기·브라우저 배율이 바뀌면 다시 보정하세요.</p>
-      <div class="cal-panel" id="calPanel"><div class="cal-scroll"><div id="card" class="cal-reference">↔ 카드의 짧은 변 · 53.98 mm</div></div><input id="calRange" type="range" min="50" max="150" step="0.1" value="100"><div class="cal-actions"><span id="calValue">100%</span><button id="saveCal">이 크기로 저장</button></div></div>
+      <button id="manual" class="manual-link" type="button">치수 직접 입력할게요</button>
     </section>
     <section class="card stage" aria-labelledby="stage-title">
-      <div class="stage-head"><div><div class="eyebrow">STEP 2 · 실물 비교</div><h2 id="stage-title">화면 위에서 크기를 확인하세요</h2></div><div class="tabbar" role="group" aria-label="보기 방식"><button class="active" data-dim="2d">2D 실물크기</button><button data-dim="3d">3D 모형</button></div></div>
-      <div id="view2d" class="view2d">
-        <div class="tabbar" role="group" aria-label="방향"><button class="active" data-view="front">앞면</button><button data-view="side">옆면</button></div>
-        <p id="modelNote" class="cal-note">직접 입력 예시 · 화면 보정 후 비교하세요.</p><div class="canvas"><div class="pill-wrap"><div id="pill" class="pill oval" style="--long:17.2;--short:7.1"><span>TABLET</span></div><div class="measure" id="measure"><span>장축 17.2 mm</span><span>단축 7.1 mm</span></div></div></div>
+      <div class="back-row"><button class="back-btn" type="button" id="backToSearchFromResult">알약 실물크기</button></div>
+      <div class="result-header">
+        <div class="result-summary-row">
+          <button class="quick-photo" id="quickPhotoBtn" type="button" hidden aria-haspopup="dialog" aria-label="사진 크게 보기">
+            <div id="medicineImage"></div>
+          </button>
+          <div class="result-summary-text">
+            <p class="rh-name" id="resultName">직접 입력 예시</p>
+            <p class="rh-company" id="resultCompany">특정 의약품의 치수가 아닙니다</p>
+            <p class="quick-facts" id="quickFacts" hidden></p>
+          </div>
+        </div>
+        <div id="sizeSummary" class="size-summary" hidden></div>
       </div>
-      <div id="view3d" class="view3d" hidden>
-        <p id="model3dNote" class="cal-note"></p>
-        <div class="tabbar" role="group" aria-label="크기 보기"><button data-zoom="1">실제 크기</button><button class="active" data-zoom="2">확대 보기</button></div>
+      <div id="view3d" class="view3d">
+        <div class="tabbar" role="group" aria-label="크기 보기"><button class="active" data-zoom="2">확대 보기</button><button data-zoom="1">실제 크기</button></div>
         <div class="scene3d" id="scene3d"><p class="scene3d-hint">드래그하여 회전 · 두 손가락으로 확대/축소</p></div>
+        <p id="model3dNote" class="cal-note"></p>
       </div>
+      <p class="flavor-badge" id="flavorBadge" hidden><span class="flavor-label">맛·향</span><span id="flavorChips"></span></p>
+
+      <div class="cal-status-card">
+        <p class="cal-status-text" id="calStatusText">화면 보정 필요</p>
+        <button id="toggleCal" aria-expanded="false">보정하기</button>
+      </div>
+      <div class="cal-panel" id="calPanel"><div class="cal-scroll"><div id="card" class="cal-reference">↔ 카드의 짧은 변 · 53.98 mm</div></div><p class="cal-note">실제 카드의 짧은 변(53.98 mm)을 기준선에 맞추세요.</p><input id="calRange" type="range" min="50" max="150" step="0.1" value="100"><div class="cal-actions"><span id="calValue">100%</span><button id="saveCal">이 크기로 저장</button></div></div>
+
+      <details class="section-accordion" id="manualEntryDetails">
+        <summary>치수 직접 입력</summary>
+        <div class="acc-body">
+          <div class="fields">
+            <div class="field"><label for="long">장축</label><div class="inputwrap"><input id="long" type="number" min="1" max="40" step="0.1" value="17.2" inputmode="decimal"><span class="unit">mm</span></div></div>
+            <div class="field"><label for="short">단축</label><div class="inputwrap"><input id="short" type="number" min="1" max="40" step="0.1" value="7.1" inputmode="decimal"><span class="unit">mm</span></div></div>
+            <div class="field"><label for="thick">두께</label><div class="inputwrap"><input id="thick" type="number" min="0.5" max="20" step="0.1" value="5.2" inputmode="decimal"><span class="unit">mm</span></div></div>
+          </div>
+          <div class="shape-row" role="group" aria-label="알약 모양"><button class="shape active" data-shape="oval"><i></i>타원형</button><button class="shape" data-shape="capsule"><i></i>장방형</button><button class="shape" data-shape="round"><i></i>원형</button></div>
+        </div>
+      </details>
+
+      <details class="section-accordion" id="detailsAccordion">
+        <summary>의약품 상세정보 보기</summary>
+        <div class="acc-body">
+          <section id="medicineDetails" class="medicine-details" aria-label="선택한 의약품 낱알식별 정보" hidden>
+            <p class="cal-note">식약처 제공 제품 사진 · 사진은 실물 크기가 아닙니다. (사진은 위 상단에서 크게 볼 수 있습니다)</p>
+            <dl id="identityFacts" class="medicine-facts"></dl>
+            <div id="extraDetails" hidden>
+              <details><summary>성분·허가정보 (제품 허가정보)</summary><p id="permitStatus" role="status"></p><dl id="permitFacts" class="medicine-facts"></dl><a href="https://www.data.go.kr/data/15095677/openapi.do" target="_blank" rel="noopener noreferrer">출처: 의약품 제품 허가정보</a></details>
+              <details><summary>복약정보 (e약은요)</summary><p id="easyStatus" role="status"></p><dl id="easyFacts" class="medicine-facts"></dl><a href="https://www.data.go.kr/data/15075057/openapi.do" target="_blank" rel="noopener noreferrer">출처: e약은요</a></details>
+              <details><summary>추가 품목 정보 보기</summary><dl id="extraFacts" class="medicine-facts"></dl></details>
+              <a href="https://www.data.go.kr/data/15057639/openapi.do" target="_blank" rel="noopener noreferrer">출처: 식품의약품안전처 의약품 낱알식별 정보</a>
+            </div>
+          </section>
+          <p id="noDetailsNote" class="cal-note">직접 입력 모드에서는 표시할 상세정보가 없습니다.</p>
+        </div>
+      </details>
+
       <div class="warning"><strong>ⓘ</strong><div><b>실물 판별용이 아닌 크기 비교 보조 도구입니다.</b><br>화면 확대·축소가 100%인지 확인하고, 약의 식별과 복용은 반드시 약사 또는 의사에게 확인하세요.</div></div>
       <div class="card-footnote">검색어는 조회 및 캐시를 위해 서버로 전송됩니다. 화면 보정값은 이 기기에 저장됩니다.</div>
     </section>
   </div>
+
   <div class="grid liquid-tool" id="liquidTool">
     <section class="card liquid-controls">
+      <div class="back-row to-home"><button class="back-btn" type="button" data-mode="home">홈</button></div>
       <div class="eyebrow">실시간 용량 보조 측정</div><h2>컵의 기준을 먼저 맞추세요</h2><p class="lead">현재 MVP는 투명한 직선형·완만한 테이퍼형 컵에서 액면선을 직접 맞추는 방식입니다.</p>
       <label class="field"><span>컵 모양</span><select class="select" id="cupShape"><option value="straight">직선형 컵</option><option value="taper">위가 넓은 컵</option></select></label>
       <div class="row2" style="margin-top:12px"><label class="field"><span>위쪽 기준 용량</span><div class="inputwrap"><input class="num" id="maxMl" type="number" value="100" min="5" max="1000" inputmode="decimal"><span class="unit">mL</span></div></label><label class="field"><span>현재 표시</span><div class="inputwrap"><input class="num" id="currentMl" value="40" readonly><span class="unit">mL</span></div></label></div>
@@ -271,10 +458,17 @@
     <section class="card camera-card"><div class="camera-wrap" id="cameraWrap"><video id="camera" playsinline muted></video><div class="camera-placeholder"><b>카메라로 투명컵을 비춰보세요</b><span>영상은 기기 안에서만 표시되며 저장되지 않습니다.</span><span class="camera-permission-note">측정을 위해 카메라 권한이 필요합니다.</span><br><button id="startCamera">카메라 켜기</button><div class="camera-error" id="cameraError"></div></div><div class="cup-guide"><div class="level-line" id="levelLine"></div><div class="volume-badge"><strong id="volumeText">40 mL</strong><br><small>추정 용량</small></div></div></div></section>
   </div>
 
-  <footer class="app-footer">
-    <nav><a href="#" id="privacyLink">개인정보처리방침</a><a href="#" id="termsLink">이용약관</a></nav>
-    <div>알약 실물크기 측정기 <span id="appVersionFooter">v1.0.0</span></div>
-  </footer>
+  <nav class="bottom-nav" aria-label="주요 메뉴">
+    <button type="button" data-mode="home"><span class="nav-ic">🏠</span><span>홈</span></button>
+    <button type="button" class="nav-primary" data-mode="pill"><span class="nav-ic">💊</span><span>약 크기 확인</span></button>
+    <button type="button" data-mode="settings"><span class="nav-ic">⚙️</span><span>설정</span></button>
+  </nav>
+
+  <dialog id="photoModal" class="photo-modal">
+    <button id="closePhotoModal" class="photo-modal-close" type="button" aria-label="닫기">✕</button>
+    <div id="photoModalImage" class="photo-modal-image"></div>
+    <p class="photo-modal-caption">식약처 제공 제품 사진 · 사진은 실물 크기가 아닙니다.</p>
+  </dialog>
 </main>
 <script src="/app.js" defer></script>
 </body></html>

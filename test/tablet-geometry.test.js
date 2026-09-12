@@ -19,9 +19,14 @@ function assertSolidThroughCenter(geometry, expectedThickness, tolerance = 0.15)
   geometry.computeVertexNormals();
   const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
   const raycaster = new THREE.Raycaster();
-  raycaster.set(new THREE.Vector3(0, 0, 1000), new THREE.Vector3(0, 0, -1));
+  // A tiny, deliberately non-axis-aligned offset (not 0, not a round number like 0.05/0.1): a ray
+  // passing exactly through the origin or along an axis can graze the exact shared edge between two
+  // of the lofted dome's triangles (the apex fan, or a ring seam that lands on a sampled angle like
+  // 0°/45°/90°), which THREE's raycaster can double-count as two grazing hits on a perfectly solid
+  // mesh - confirmed by probing many nearby offsets, where only the axis-aligned ones ever do this.
+  raycaster.set(new THREE.Vector3(0.037, 0.081, 1000), new THREE.Vector3(0, 0, -1));
   const hits = raycaster.intersectObject(mesh);
-  assert.equal(hits.length, 2, `a ray through the exact center must hit a front cap and a back cap (got ${hits.length} intersections - a hollow/open geometry hits 0)`);
+  assert.equal(hits.length, 2, `a ray through the model's center must hit a front cap and a back cap (got ${hits.length} intersections - a hollow/open geometry hits 0)`);
   const gap = Math.abs(hits[0].distance - hits[1].distance);
   assert.ok(ratioClose(gap, expectedThickness, tolerance), `front/back cap separation should be ~${expectedThickness}mm, got ${gap}`);
 }
@@ -151,4 +156,53 @@ test('colorToCss: COLOR_CLASS1/2에 쉼표로 붙는 실제 수식어/2색 표�
   assert.equal(colorToCss(''), '#eef2f0');
   assert.equal(colorToCss(null), '#eef2f0');
   assert.equal(colorToCss('이런색은없음'), '#eef2f0');
+});
+
+// Real DRUG_SHAPE values confirmed by scanning ~400 live 낱알식별 search results: 원형/장방형/타원형/
+// 팔각형/오각형/삼각형/사각형/기타 all actually occur (마름모형/육각형 are in the same official
+// vocabulary and mapped the same generalized way, though they didn't turn up in that particular
+// sample). classifyShape3D must route every one of these to a distinct shape3d key.
+test('classifyShape3D: 다각형 DRUG_SHAPE(마름모형·오각형·육각형·팔각형)을 각각 구분해서 분류한다', () => {
+  assert.equal(classifyShape3D('마름모형', 'oval'), 'rhombus');
+  assert.equal(classifyShape3D('오각형', 'oval'), 'pentagon');
+  assert.equal(classifyShape3D('육각형', 'oval'), 'hexagon');
+  assert.equal(classifyShape3D('팔각형', 'oval'), 'octagon');
+  assert.equal(classifyShape3D('삼각형', 'oval'), 'triangle');
+  // "기타" (e.g. a real 곰얼굴/bear-face novelty 츄어블정) has no dedicated geometry - it must fall
+  // back to the closest basic 2D shape rather than silently matching some other polygon by accident.
+  assert.equal(classifyShape3D('기타', 'round'), 'round');
+});
+
+// buildTabletGeometry's polygon branch must (a) hit each requested real long/short/thick exactly -
+// filleting a polygon's corners pulls the vertex itself inward (unlike a rounded rect, where the
+// flat edges between corners still reach the full width), so this specifically guards the
+// corrective rescale in roundedPolygonExact() - and (b) still be a solid, not a shell.
+for (const [shape3d, label, long, short, thick] of [
+  ['triangle', '삼각형 (실측: 프로코라란정7.5밀리그램)', 7, 5, 3.1],
+  ['rhombus', '마름모형', 10, 6, 4],
+  ['pentagon', '오각형 (실측: 로큅정0.25밀리그램)', 8.1, 8.1, 3.8],
+  ['hexagon', '육각형', 10, 7, 4],
+  ['octagon', '팔각형 (실측: 바로디핀정5밀리그램)', 8.7, 6.2, 3.8]
+]) {
+  test(`${label}: bounding box가 장축:단축:두께(${long}:${short}:${thick})를 정확히 유지하는 solid geometry다`, () => {
+    const geo = buildTabletGeometry(THREE, { long, short, thick, shape3d });
+    const size = bboxSize(geo);
+    assert.ok(ratioClose(size.x, long), `x=${size.x}, expected ~${long}`);
+    assert.ok(ratioClose(size.y, short), `y=${size.y}, expected ~${short}`);
+    assert.ok(ratioClose(size.z, thick), `z=${size.z}, expected ~${thick}`);
+    assertSolidThroughCenter(geo, thick);
+  });
+}
+
+// The 5 shapes above (round/oblong already covered earlier in this file, plus triangle/pentagon/
+// octagon here) must not silently collapse to the same geometry - a regression that swapped one
+// polygon's vertex count for another would still pass every bbox check individually.
+test('원형·장방형·삼각형·오각형·팔각형은 서로 다른 정점 개수의 geometry를 생성한다(같은 모양으로 겹치지 않는다)', () => {
+  const base = { long: 10, short: 8, thick: 4 };
+  const counts = ['round', 'oblong', 'triangle', 'pentagon', 'octagon'].map(shape3d => {
+    const geo = buildTabletGeometry(THREE, { ...base, shape3d });
+    geo.computeBoundingBox();
+    return geo.attributes.position.count;
+  });
+  assert.equal(new Set(counts).size, counts.length, `각 shape3d는 서로 다른 정점 수를 가져야 한다: ${JSON.stringify(counts)}`);
 });
