@@ -6,6 +6,7 @@ import { Window } from 'happy-dom';
 import { normalize } from '../src/worker.js';
 import * as auth from '../public/auth.js';
 import * as prescriptions from '../public/prescriptions.js';
+import * as realDoseCalc from '../public/dose-calc.js';
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const medicineFlowScript = await readFile(new URL('../public/medicine-flow.js', import.meta.url), 'utf8');
 const script = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -32,7 +33,7 @@ function setup(t, fetcher = async () => Response.json(payload()), { skipAuthGate
   // prescriptions.js도 auth.js/dose-calc.js와 같은 이유로 이 하네스에서 동적 import()가 실패한다(happy
   // -dom의 disableJavaScriptFileLoading) - setPrescriptionsApi로 실제(Node import) 모듈을 직접 주입해
   // loadPrescriptionsApi()의 동적 import를 우회한다. 저장/조회 로직 자체는 이 실제 모듈이 수행한다.
-  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, setPrescriptionsApi(value) { prescriptionsApi = value; }, getGroups() { return rxGroups; }, getPatientAgeYears() { return patientAgeYears; }, getPatientWeightKg() { return patientWeightKg; }, getAuthGateOpen() { return authGateOpen; }, getCurrentProfile() { return currentProfile; }, applyAuthResolution(resolvedAuthApi, session, profile, config) { return applyAuthResolution(resolvedAuthApi, session, profile, config); }, setFlowSearchTimeoutMs(ms) { FLOW_SEARCH_TIMEOUT_MS = ms; } };');
+  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, setPrescriptionsApi(value) { prescriptionsApi = value; }, setDoseCalc(value) { doseCalc = value; }, getGroups() { return rxGroups; }, getPatientAgeYears() { return patientAgeYears; }, getPatientWeightKg() { return patientWeightKg; }, getAuthGateOpen() { return authGateOpen; }, getCurrentProfile() { return currentProfile; }, applyAuthResolution(resolvedAuthApi, session, profile, config) { return applyAuthResolution(resolvedAuthApi, session, profile, config); }, setFlowSearchTimeoutMs(ms) { FLOW_SEARCH_TIMEOUT_MS = ms; } };');
   const $ = selector => window.document.querySelector(selector);
   const input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input')); };
   const submit = async () => { $('#searchForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle(); };
@@ -1108,17 +1109,40 @@ test('저장된 처방전 목록: 삭제하면 목록에서 사라진다', async
   assert.ok(!$('#rxRecentList').textContent.includes('시험약'));
 });
 
-test('DUR 블록: 용량주의·투여기간주의 데이터가 있으면 성분별로 보여주고, 미등록/장애/데이터없음 상태를 구분해 서로 다른 출처와 섞지 않는다', t => {
+test('DUR 블록: available/no-data/pending-or-unavailable/error 네 상태를 구분해 서로 다른 출처와 섞지 않는다', t => {
   const { window } = setup(t);
   window.eval(`
-    window.__durOk = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'ok', data: [{ content: '1일 최대 용량을 초과하지 마십시오.' }] }, period: { status: 'ok', data: [] } }); return p.textContent; })();
-    window.__durUnavailable = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'unavailable', data: [] }, period: { status: 'unavailable', data: [] } }); return p.textContent; })();
-    window.__durError = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'error', data: [] }, period: { status: 'ok', data: [] } }); return p.textContent; })();
-    window.__durEmpty = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'ok', data: [] }, period: { status: 'ok', data: [] } }); return p.textContent; })();
+    window.__durAvailable = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'available', data: [{ content: '1일 최대 용량을 초과하지 마십시오.' }] }, period: { status: 'no-data', data: [] } }); return p.textContent; })();
+    window.__durPending = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'pending-or-unavailable', data: [] }, period: { status: 'pending-or-unavailable', data: [] } }); return p.textContent; })();
+    window.__durError = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'error', data: [] }, period: { status: 'available', data: [] } }); return p.textContent; })();
+    window.__durNoData = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'no-data', data: [] } }); return p.textContent; })();
   `);
-  assert.ok(window.__durOk.includes('1일 최대 용량을 초과하지 마십시오.'));
-  assert.ok(window.__durOk.includes('DUR'), '출처가 DUR로 명시되고 e약은요/허가정보와 섞이지 않는다');
-  assert.ok(window.__durUnavailable.includes('승인되지 않았습니다'), '서비스키 미등록은 장애가 아니라 별도 문구로 안내한다');
+  assert.ok(window.__durAvailable.includes('1일 최대 용량을 초과하지 마십시오.'));
+  assert.ok(window.__durAvailable.includes('[DUR 안전사용 정보]'), '출처가 DUR로 명시되고 e약은요/허가정보와 섞이지 않는다');
+  assert.ok(window.__durAvailable.includes('참고정보이며'), 'DUR 데이터가 실제로 있을 때만 참고정보 안내문이 붙는다');
+  assert.ok(window.__durPending.includes('API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다'), '키가 잘못됐다고 단정하지 않는 문구를 그대로 보여준다');
+  assert.equal([...new Set(window.__durPending.match(/API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다/g))].length, 1, 'capacity/period가 같은 원인이면 메시지를 중복 출력하지 않는다');
   assert.ok(window.__durError.includes('지금 불러오지 못했습니다'));
-  assert.ok(window.__durEmpty.includes('DUR 정보가 없습니다'));
+  assert.ok(window.__durNoData.includes('DUR 정보가 없습니다'));
+  assert.ok(!window.__durPending.includes('참고정보이며'), '실제 데이터가 없으면 참고정보 안내문을 붙이지 않는다');
+});
+
+test('DUR 투여기간주의: 조건 없는 "N일" 문구는 현재 처방 일수와 나란히 비교하고, 조건부 문구는 원문만 보여주고 자동 비교하지 않는다', t => {
+  const { window } = setup(t);
+  window.__rxTest.setDoseCalc(realDoseCalc);
+  window.eval(`
+    window.__durOver = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'available', data: [{ content: '10일 이상 연속으로 투여하지 않는다.', remark: '' }] } }, 14); return p.textContent; })();
+    window.__durWithin = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'available', data: [{ content: '10일 이상 연속으로 투여하지 않는다.', remark: '' }] } }, 5); return p.textContent; })();
+    window.__durConditional = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'available', data: [{ content: '항암제 투여로 인한 구역 및 구토의 방지에 쓰는 제품에 한함', remark: '' }] } }, 14); return p.textContent; })();
+  `);
+  assert.ok(window.__durOver.includes('공식 DUR 투여기간주의: 10일'));
+  assert.ok(window.__durOver.includes('현재 처방: 14일'));
+  assert.ok(window.__durOver.includes('현재 처방기간이 DUR 투여기간주의 기준을 초과합니다.'));
+  assert.ok(!window.__durWithin.includes('초과합니다'), '기준 이내면 초과 문구를 붙이지 않는다');
+  assert.ok(window.__durWithin.includes('현재 처방: 5일'));
+  assert.ok(!window.__durConditional.includes('공식 DUR 투여기간주의:'), '조건부 문구는 숫자 비교를 하지 않는다');
+  assert.ok(window.__durConditional.includes('숫자로 자동 비교하지 않습니다'));
+  for (const text of [window.__durOver, window.__durWithin, window.__durConditional]) {
+    assert.ok(!/처방기간이\s*잘못|과도한\s*처방/.test(text), '단정적 표현을 쓰지 않는다');
+  }
 });

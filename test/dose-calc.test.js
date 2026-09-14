@@ -4,7 +4,7 @@ import {
   round1, formatMg, parseTabletFraction, parseIngredients, tabletStrengthMg, concentrationsPerMl,
   doseFromTablet, doseFromSyrup, dailyTotal, perKg, parseOcrDoseNear, parseOfficialDosage,
   positionInRange, POSITION, analyzeDose, comparisonStatusFromPosition, COMPARISON_STATUS,
-  referenceMgRangeFromPerKg, referenceMlRangeFromMg, referenceUnitRangeFromMg
+  referenceMgRangeFromPerKg, referenceMlRangeFromMg, referenceUnitRangeFromMg, parseDurPeriodLimitDays
 } from '../public/dose-calc.js';
 
 test('round1/formatMg: 반올림하고 정확히 떨어지는 값에는 "약" 접두어를 붙이지 않는다', () => {
@@ -29,6 +29,24 @@ test('parseTabletFraction: 0.5T/0.6667정/1.5 T/반쪽 표기를 숫자로 변�
 const TYLENOL_MATERIALS = '총량 : 1정615.04밀리그램|성분명 : 아세트아미노펜|분량 : 500|단위 : 밀리그램|규격 : USP|성분정보 : |비고 :';
 const KOMI_MATERIALS = '총량 : 이 약 100밀리리터 중-1.1 색소2처방|성분명 : 페닐레프린염산염|분량 : 100|단위 : 밀리그램|규격 : KP|성분정보 : |비고 : ;총량 : 이 약 100밀리리터 중-1.1 색소2처방|성분명 : 클로르페니라민말레산염|분량 : 40|단위 : 밀리그램|규격 : KP|성분정보 : |비고 : ;총량 : 이 약 100밀리리터 중-1.2 색소3처방|성분명 : 페닐레프린염산염|분량 : 100|단위 : 밀리그램|규격 : KP|성분정보 : |비고 :';
 const MAXIBUFEN_MATERIALS = '총량 : 100밀리리터|성분명 : 덱시부프로펜|분량 : 1.2|단위 : 그램|규격 : KP|성분정보 : |비고 :';
+
+// 실제 제품허가정보 API 응답 그대로(2026-09-14, item_seq=201701391) - 원료 자체가 농축액이라 분량/단위가
+// mg이 아니라 부피(밀리리터)로 기재된 실제 사례. 실제 유효성분량은 "성분정보" 자유텍스트에만 있다.
+const DUPHALAC_MATERIALS = '총량 : 이 약 100mL 중|성분명 : 락툴로오즈액|분량 : 67|단위 : 밀리리터|규격 : EP|성분정보 : 락툴로오즈로서 66.7그램|비고 :';
+
+test('parseIngredients: 분량/단위가 부피(mL)로 기재된 농축원료(듀파락시럽 실제 데이터)는 "성분정보" 텍스트의 실제 mg 환산량을 읽는다', () => {
+  const parsed = parseIngredients(DUPHALAC_MATERIALS);
+  assert.equal(parsed.length, 1, '더 이상 성분 함량 정보를 놓치지 않는다');
+  assert.equal(parsed[0].name, '락툴로오즈액');
+  assert.equal(parsed[0].amountMg, 66700, '66.7그램 = 66700mg - 제품명으로 추정한 값이 아니라 성분정보 원문 값');
+  const conc = concentrationsPerMl(DUPHALAC_MATERIALS);
+  assert.equal(conc[0].mgPerMl, 667, '66700mg / 100mL = 667mg/mL');
+});
+
+test('parseIngredients: "성분정보"에도 mg 환산 텍스트가 전혀 없으면 여전히 추측하지 않고 건너뛴다', () => {
+  const noFallback = '총량 : 이 약 100mL 중|성분명 : 시험원료|분량 : 50|단위 : 밀리리터|규격 : KP|성분정보 : |비고 :';
+  assert.deepEqual(parseIngredients(noFallback), []);
+});
 
 test('parseIngredients: 파이프/세미콜론 구분 materials를 파싱하고, 같은 성분은 처음 등장한 그룹만 남긴다', () => {
   const tylenol = parseIngredients(TYLENOL_MATERIALS);
@@ -269,4 +287,22 @@ test('요청 F: 자연어 단순 패턴만 신뢰 가능하게 구조화하고, 
 
   const capped = parseOfficialDosage('1일 4회를 초과하지 않는다.');
   assert.equal(capped.maxFrequencyPerDay, 4);
+});
+
+// --- DUR 투여기간주의 원문(N일) 파싱: 일반 허가 용법·용량과 완전히 별개의 출처/함수다 (요청 5/6) -------
+test('parseDurPeriodLimitDays: 단순·무조건적인 문장에서만 "N일" 상한을 신뢰 있게 뽑는다', () => {
+  assert.equal(parseDurPeriodLimitDays('10일 이상 연속으로 투여하지 않는다.').maxDays, 10);
+  assert.equal(parseDurPeriodLimitDays('7일 이내로 복용한다.').maxDays, 7);
+  assert.deepEqual(parseDurPeriodLimitDays('이 약은 10일 이상 투여하지 않는다.'), parseDurPeriodLimitDays('이 약은 10일 이상 투여하지 않는다.'), '동일 입력은 동일 결과(순수함수)');
+});
+test('parseDurPeriodLimitDays: 적응증/예외/조건이 섞인 문장은 절대 숫자로 단순 비교하지 않는다', () => {
+  const conditional = parseDurPeriodLimitDays('항암제 투여로 인한 구역 및 구토의 방지에 쓰는 제품에 한함 - 5일 이내로 복용');
+  assert.equal(conditional.maxDays, null, '조건부 문장에서는 숫자를 뽑지 않는다');
+  assert.equal(conditional.hasConditions, true);
+  const noNumber = parseDurPeriodLimitDays('항암제 투여로 인한 구역 및 구토의 방지에 쓰는 제품에 한함');
+  assert.equal(noNumber.maxDays, null);
+});
+test('parseDurPeriodLimitDays: 빈 텍스트/매칭 실패는 조용히 null이지 추측하지 않는다', () => {
+  assert.deepEqual(parseDurPeriodLimitDays(''), { maxDays: null, hasConditions: false });
+  assert.deepEqual(parseDurPeriodLimitDays('의사의 지시에 따른다.'), { maxDays: null, hasConditions: false });
 });

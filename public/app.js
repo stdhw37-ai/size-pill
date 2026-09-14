@@ -1075,24 +1075,44 @@ async function ensureDurData(item) {
   } catch { /* DUR 조회 실패는 무시 - 아래에서 "지금 불러오지 못했습니다"로 안내한다. */ }
   return item.dur || null;
 }
-// 출처를 절대 섞지 않는다(item 10): 용량주의/투여기간주의는 식약처 DUR, 성분·함량은 제품허가정보,
-// 사용법은 e약은요로 각각 명시한다.
-function renderDurBlock(panel, dur) {
+// 출처를 절대 섞지 않는다(item 10/11): 용량주의/투여기간주의는 식약처 DUR, 성분·함량/일반 허가 용법·용량은
+// 의약품 허가사항, 사용법은 e약은요로 각각 명시한다. DUR 값을 referenceMgRange 같은 일반 허가용량 범위로
+// 절대 바꿔치기하지 않는다 - 이 함수는 dose-calc.js의 analyzeDose 결과를 전혀 참조하지 않는 완전히 별도
+// 경로다. currentDurationDays(처방전에서 읽은 총 투약일수)가 있고 DUR 투여기간주의 원문에서 "N일" 상한을
+// 조건 없이 신뢰 있게 뽑을 수 있을 때만(doseCalc.parseDurPeriodLimitDays) 두 숫자를 나란히 보여준다 - 그
+// 외에는 원문만 보여주고 자동 비교하지 않는다.
+function renderDurBlock(panel, dur, currentDurationDays) {
   const section = flowNode('div', '', 'rx-dur');
-  section.append(flowNode('h4', 'DUR 주의사항 (용량주의·투여기간주의)'));
-  const entries = [
-    ...(dur?.capacity?.data || []).map(d => ({ ...d, label: '용량주의' })),
-    ...(dur?.period?.data || []).map(d => ({ ...d, label: '투여기간주의' }))
-  ];
-  if (entries.length) {
-    for (const entry of entries) section.append(flowNode('p', `[${entry.label}] ${entry.content || entry.mainIngredient || '내용 미제공'}`, 'tip danger'));
-  } else if ([dur?.capacity?.status, dur?.period?.status].includes('unavailable')) {
-    section.append(flowNode('p', 'DUR 연동이 아직 승인되지 않았습니다 - 현재 계정의 공공데이터포털 키가 이 API에 별도로 등록되어 있지 않습니다.', 'tip'));
-  } else if ([dur?.capacity?.status, dur?.period?.status].includes('error') || !dur) {
-    section.append(flowNode('p', 'DUR 정보를 지금 불러오지 못했습니다.', 'tip'));
-  } else {
-    section.append(flowNode('p', '해당 성분에 등록된 용량주의·투여기간주의 DUR 정보가 없습니다.', 'tip'));
+  section.append(flowNode('h4', '[DUR 안전사용 정보] 용량주의 · 투여기간주의'));
+  const categories = [{ key: 'capacity', label: '용량주의', result: dur?.capacity }, { key: 'period', label: '투여기간주의', result: dur?.period }];
+  const statusMessages = new Set();
+  let anyContent = false;
+  for (const { key, label, result } of categories) {
+    if (result?.status === 'available' && result.data.length) {
+      anyContent = true;
+      for (const entry of result.data) {
+        const box = flowNode('div', '', 'rx-dur-entry');
+        box.append(flowNode('p', `[${label}] ${entry.content || entry.mainIngredient || '내용 미제공'}`, 'tip danger'));
+        if (key === 'period' && doseCalc) {
+          const parsed = doseCalc.parseDurPeriodLimitDays(`${entry.content} ${entry.remark}`);
+          if (parsed.maxDays != null) {
+            box.append(flowNode('p', `공식 DUR 투여기간주의: ${parsed.maxDays}일`));
+            if (Number.isFinite(currentDurationDays)) {
+              box.append(flowNode('p', `현재 처방: ${currentDurationDays}일`));
+              if (currentDurationDays > parsed.maxDays) box.append(flowNode('p', '현재 처방기간이 DUR 투여기간주의 기준을 초과합니다.', 'rx-position'));
+            }
+          } else if (parsed.hasConditions) {
+            box.append(flowNode('p', '적응증·예외 조건이 포함된 문구여서 처방기간을 숫자로 자동 비교하지 않습니다 - 위 원문을 확인하세요.', 'tip'));
+          }
+        }
+        section.append(box);
+      }
+    } else if (result?.status === 'no-data') statusMessages.add(`[${label}] 이 제품에 등록된 DUR 정보가 없습니다.`);
+    else if (result?.status === 'pending-or-unavailable') statusMessages.add('DUR 안전사용 정보의 API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다.');
+    else statusMessages.add('DUR 정보를 지금 불러오지 못했습니다.');
   }
+  for (const msg of statusMessages) section.append(flowNode('p', msg, 'tip'));
+  if (anyContent) section.append(flowNode('p', 'DUR 정보는 안전사용을 위한 참고정보이며, 환자의 상태와 적응증에 따라 실제 처방은 달라질 수 있습니다.', 'tip danger'));
   section.append(flowNode('p', '출처: 식품의약품안전처 의약품안전사용서비스(DUR)', 'cal-note'));
   panel.append(section);
 }
@@ -1122,7 +1142,7 @@ async function renderRxDoseDetail(group) {
   if (!analysis || analysis.status === 'insufficient') {
     panel.append(flowNode('p', '정확한 용량 비교를 위해 추가 정보가 필요합니다.', 'tip danger'));
   } else {
-    panel.append(flowNode('h4', '성분별 계산 및 공식 허가범위 비교'));
+    panel.append(flowNode('h4', '[공식 허가 용법·용량] 성분별 계산 및 범위 비교'));
     // 계산에 필요한 정보가 부족한 성분만 따로 짧게 보여준다 - 다성분제는 절대 총 mg으로 합치지 않는다
     // (item 17). 계산 가능한 성분은 아래 analysis.comparisons 루프에서 한 블록에 전부 보여준다 - doseMg/
     // dailyMg/mgPerKgDose까지 이미 그 안에 포함돼 있어(dose-calc.js analyzeDose 참고) 따로 순회하지 않는다.
@@ -1191,10 +1211,10 @@ async function renderRxDoseDetail(group) {
   } else {
     panel.append(flowNode('p', '공식 사용법 정보를 확인하지 못했습니다.', 'tip'));
   }
-  renderDurBlock(panel, dur);
+  renderDurBlock(panel, dur, group.row?.durationDays);
   const sources = flowNode('div', '', 'cal-note');
-  sources.append(flowNode('p', '출처 - 성분·함량: 식품의약품안전처 제품허가정보'));
-  if (analysis?.usageText) sources.append(flowNode('p', '출처 - 사용법·1회 용량 범위: e약은요(식품의약품안전처)'));
+  sources.append(flowNode('p', '출처: 식품의약품안전처 의약품 허가사항'));
+  if (analysis?.usageText) sources.append(flowNode('p', '출처: 식품의약품안전처 e약은요'));
   panel.append(sources);
   for (const g of (analysis?.guards || [])) panel.append(flowNode('p', g, 'tip danger'));
   panel.append(flowNode('p', '이 화면은 의료적 판단이 아니라 공식 허가사항 대비 현재 처방의 위치를 계산해 보여주는 참고 정보입니다. 실제 복용 여부는 처방한 의사·약사와 상의하세요.', 'tip danger'));

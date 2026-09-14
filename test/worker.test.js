@@ -237,17 +237,25 @@ test('DUR 엔드포인트: 용량주의·투여기간주의를 함께 조회하�
   const response = await worker.fetch(new Request('https://example.com/api/dur?item_seq=200402284'), { MFDS_SERVICE_KEY: 'fake%2Bkey%3D' }, ctx);
   assert.equal(response.status, 200);
   const data = await response.json();
-  assert.equal(data.capacity.status, 'ok'); assert.equal(data.capacity.data[0].content, '용량주의 내용');
-  assert.equal(data.period.status, 'ok'); assert.equal(data.period.data[0].content, '투여기간주의 내용');
+  assert.equal(data.capacity.status, 'available'); assert.equal(data.capacity.data[0].content, '용량주의 내용');
+  assert.equal(data.period.status, 'available'); assert.equal(data.period.data[0].content, '투여기간주의 내용');
   assert.ok(!JSON.stringify(data).includes('fake'));
 });
 
-test('DUR 엔드포인트: 서비스키 미등록(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)은 unavailable로 응답한다', async () => {
+test('DUR 엔드포인트: 이 품목에 해당 데이터가 없으면(호출은 성공) no-data로 응답한다', async () => {
+  globalThis.fetch = async () => Response.json({ header: { resultCode: '00' }, body: { totalCount: 0 } });
+  const response = await worker.fetch(new Request('https://example.com/api/dur?item_seq=200402284'), env, ctx);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.capacity.status, 'no-data'); assert.equal(data.period.status, 'no-data');
+});
+
+test('DUR 엔드포인트: 활용신청이 아직 반영되지 않은 경우(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)는 키가 잘못됐다고 단정하지 않고 pending-or-unavailable로 응답한다', async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ OpenAPI_ServiceResponse: { cmmMsgHeader: { errMsg: 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR', returnReasonCode: '30' } } }), { status: 403 });
   const response = await worker.fetch(new Request('https://example.com/api/dur?item_seq=200402284'), env, ctx);
   assert.equal(response.status, 200);
   const data = await response.json();
-  assert.equal(data.capacity.status, 'unavailable'); assert.equal(data.period.status, 'unavailable');
+  assert.equal(data.capacity.status, 'pending-or-unavailable'); assert.equal(data.period.status, 'pending-or-unavailable');
 });
 
 test('DUR 엔드포인트: 호출 제한 적용', async () => {

@@ -108,16 +108,22 @@ JSON의 최상위 `header/body`와 `response.header/body`를 지원합니다. `i
 
 제품 허가정보 상세조회(`getDrugPrdtPrmsnDtlInq06`) 실제 응답에 `EE_DOC_ID`(효능효과·용법용량 첨부문서), `UD_DOC_ID`(사용상주의사항 첨부문서), `NB_DOC_ID`(전체 첨부문서 - 가장 포괄적인 "공식 허가사항 원문")가 `HTTPS://NEDRUG.MFDS.GO.KR/PBP/CMN/PDFDOWNLOAD/<품목기준코드>/<EE|UD|NB>` 형태로 들어있는 것을 2026-09-14 실제 인증키 호출로 확인했습니다(예: 에도스캡슐 200402284). `src/mfds-enrichment.js`의 `normalizePermit`이 `officialDocUrl`/`efficacyDocUrl`/`precautionDocUrl`로 매핑하며, `nedrug.mfds.go.kr` 호스트만 허용합니다(다른 필드의 `imageUrl`과 같은 허용목록 방식).
 
-## DUR(의약품안전사용서비스) 품목정보 - 용량주의/투여기간주의 (2026-09-14)
+## DUR(의약품안전사용서비스) 품목정보 - 용량주의/투여기간주의 (2026-09-14, 활용신청 승인 후 재확인 완료)
 
-공공데이터포털 [식품의약품안전처_의약품안전사용서비스(DUR)품목정보](https://www.data.go.kr/data/15059486/openapi.do)의 swaggerJson을 직접 확인했습니다: host `apis.data.go.kr/1471000/DURPrdlstInfoService03`, 이번에 연결한 두 상세기능은 `getCpctyAtentInfoList03`(용량주의)·`getMdctnPdAtentInfoList03`(투여기간주의)이며 응답 필드는 `INGR_NAME`(DUR성분), `ITEM_SEQ`/`ITEM_NAME`, `MAIN_INGR`, `PROHBT_CONTENT`(금기내용), `REMARK`, `NOTIFICATION_DATE`, `CHANGE_DATE` 등입니다. `src/mfds-dur.js`가 이 필드를 그대로 정규화합니다.
+공공데이터포털 [식품의약품안전처_의약품안전사용서비스(DUR)품목정보](https://www.data.go.kr/data/15059486/openapi.do)의 swaggerJson을 직접 확인했습니다: host `apis.data.go.kr/1471000/DURPrdlstInfoService03`, 연결한 두 상세기능은 `getCpctyAtentInfoList03`(용량주의)·`getMdctnPdAtentInfoList03`(투여기간주의)이며 응답 필드는 `INGR_NAME`(DUR성분), `ITEM_SEQ`/`ITEM_NAME`, `MAIN_INGR`, `PROHBT_CONTENT`(금기내용), `REMARK`, `NOTIFICATION_DATE`, `CHANGE_DATE` 등입니다. `src/mfds-dur.js`가 이 필드를 그대로 정규화합니다. 같은 스키마를 쓰는 `getSpcifyAgrdeTabooInfoList03`(특정연령대금기)·`getPwnmTabooInfoList03`(임부금기)도 `DUR_SOURCES`에 구조만 등록해뒀습니다(호출은 안 함). 노인주의·효능군중복주의·서방정분할주의·병용금기는 swagger 확인 결과 응답 스키마가 달라(예: 병용금기는 성분 두 개를 짝지어 비교) 이번에는 연결하지 않고 실제 확인한 경로만 `src/mfds-dur.js` 주석에 남겨뒀습니다.
 
-이 swagger는 요청 파라미터를 문서화하지 않습니다 - 같은 세대 API인 e약은요(`DrbEasyDrugInfoService`)의 camelCase 관례를 따라 `itemSeq`로 연결했지만, 아래 이유로 실제 트래픽으로 파라미터 이름 자체를 검증하지는 못했습니다.
+**최초 시도(활용신청 전)**: 이미 정상 응답하던 동일 키로 이 DUR API를 호출하면 HTTP 403 + `{"OpenAPI_ServiceResponse":{"cmmMsgHeader":{"errMsg":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR","returnReasonCode":"30"}}}` 를 받았습니다 - 키 자체는 유효했지만(낱알식별·제품허가정보·e약은요는 정상) 이 DUR API는 별도 활용신청이 필요했습니다.
 
-**실제 연결 확인(새 키 발급 없이, 기존 `MFDS_SERVICE_KEY` 그대로)**: 이미 정상 응답하는 동일 키로 이 DUR API(`getCpctyAtentInfoList03`)를 호출하면 매번 HTTP 403과 함께 다음을 받았습니다.
+**활용신청 완료 후 재확인(2026-09-14, 새 키 발급 없이 같은 `MFDS_SERVICE_KEY` 그대로)**: `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`가 더 이상 발생하지 않고 HTTP 200 + `{"header":{"resultCode":"00","resultMsg":"NORMAL SERVICE."}}`로 정상 응답합니다. `itemSeq` 파라미터(camelCase)로 정확히 필터링되는 것도 실제 품목(예: `ITEM_SEQ=198600630`)으로 검증했습니다 - 필터 없이 조회하면 `getCpctyAtentInfoList03` 하나에만 총 6,618건이 있고, `itemSeq=198600630`으로 필터하면 정확히 그 품목 1건만 돌아옵니다. `PROHBT_CONTENT`/`REMARK`는 오래된 품목은 비어 있고(예: 캅토프릴정, 2013년 고시) 최근 갱신된 품목엔 실제 텍스트가 들어 있습니다(예: 코이베스딜정150/12.5밀리그램 `ITEM_SEQ=200805819`의 `PROHBT_CONTENT`: `"이르베사탄 300mg, 히드로클로로티아지드 25mg"`). `src/worker.js`의 `/api/dur`로 실제 재현: 요청→`worker.fetch()` 직접 호출까지 확인했습니다.
 
-```json
-{"OpenAPI_ServiceResponse":{"cmmMsgHeader":{"errMsg":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR","returnReasonCode":"30"}}}
-```
+상태는 4가지로 구분합니다(`src/mfds-dur.js`): `available`(정상 응답 + 이 품목에 실제 DUR 데이터 있음), `no-data`(정상 응답이지만 이 품목엔 해당 없음 - 예: 에도스캡슐 `ITEM_SEQ=200402284`는 capacity/period 모두 `no-data`), `pending-or-unavailable`(활용신청이 이 계정에 아직 반영되지 않았거나 이 API를 쓸 수 없음 - 키가 틀렸다고 단정하지 않음), `error`(실제 네트워크/스키마 오류). 앱은 `pending-or-unavailable`을 "DUR 안전사용 정보의 API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다."로 안내합니다(`public/app.js`의 `renderDurBlock`).
 
-같은 키로 낱알식별·제품허가정보·e약은요는 정상(200, `resultCode: "00"`) 응답합니다 - 즉 키 자체는 유효하지만, 공공데이터포털에서 이 DUR API는 (다른 세 API와 별개로) **개별 활용신청 승인**이 필요하고 현재 계정에는 그 승인이 없습니다. 새 키를 발급하거나 가정하지 않고, `src/worker.js`의 `/api/dur`와 `src/mfds-dur.js`는 이 오류를 `error`(일시적 장애)와 구분되는 `status: 'unavailable'`로 반환하도록 연결해 두었습니다 - 활용신청이 승인되면 코드 변경 없이 그대로 동작합니다. 앱은 현재 이 상태를 "DUR 연동이 아직 승인되지 않았습니다"로 투명하게 안내합니다(`public/app.js`의 `renderDurBlock`).
+투여기간주의는 API 응답에 "N일" 같은 구조화된 숫자 필드가 없고 `PROHBT_CONTENT`/`REMARK` 자유텍스트뿐입니다 - `public/dose-calc.js`의 `parseDurPeriodLimitDays`가 "10일 이상 투여하지 않는다"처럼 아주 단순하고 무조건적인 문장에서만 숫자를 뽑고, "~에 한함"/"다만"/"제외" 같은 조건·예외 표현이 섞여 있으면 절대 숫자를 뽑지 않고 원문만 보여줍니다(실제 관찰한 REMARK 예: "항암제 투여로 인한 구역 및 구토의 방지에 쓰는 제품에 한함" - 이런 문장은 숫자 비교 대상이 아닙니다).
+
+## 제품허가정보 부피 단위 원료 - 실제 성분함량 파싱 보완 (2026-09-14)
+
+듀파락시럽(락툴로오즈액, `ITEM_SEQ=201701391`)의 실제 `MATERIAL_NAME`을 확인한 결과: `총량 : 이 약 100mL 중|성분명 : 락툴로오즈액|분량 : 67|단위 : 밀리리터|성분정보 : 락툴로오즈로서 66.7그램|...` - 이 제품은 원료 자체가 농축액이라 `분량`/`단위`가 질량(mg/g)이 아니라 부피(밀리리터)로 기재되어 있습니다. 기존 `public/dose-calc.js`의 `parseIngredients`는 `단위`가 질량 단위일 때만 mg로 환산했기 때문에 이 경우 성분을 통째로 건너뛰어("제품의 성분 함량 정보(공식 허가정보)를 확인하지 못했습니다") 용량 분석이 아예 시작되지 못했습니다.
+
+`성분정보` 자유텍스트 안에 실제 유효성분 질량("락툴로오즈로서 66.7그램")이 별도로 들어있는 것을 확인해, `단위`가 질량으로 환산되지 않을 때만 `성분정보`에서 `([\d.]+)\s*(그램|그람|g|밀리그램|밀리그람|mg|마이크로그램|mcg|µg)` 패턴을 보조로 읽도록 `parseIngredients`를 보완했습니다(제품명으로 추정한 값이 아니라 문서화된 필드 안의 실제 텍스트만 읽음 - 매칭 실패 시 여전히 건너뜀). 결과: 66.7g = 66700mg, 100mL 기준 농도 667mg/mL - `src/worker.js`의 `/api/liquids?item_seq=201701391` → `parseIngredients`/`concentrationsPerMl`까지 실제 API 응답으로 재현해 확인했습니다.
+
+단, 이 제품은 e약은요(`DrbEasyDrugInfoService`)에 등록 자체가 없어(`easy.status: 'not_found'`) 공식 mg/kg 범위 비교는 여전히 "정확한 용량 비교를 위해 추가 정보가 필요합니다"로 남습니다 - 이건 코드 문제가 아니라 이 제품이 해당 데이터셋에 없는 것이고, 이제는 최소한 "성분 함량을 못 찾음"이 아니라 "성분 함량은 확인됨, 공식 사용법 텍스트만 없음"으로 더 정확하게 구분됩니다.

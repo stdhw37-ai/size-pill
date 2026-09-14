@@ -54,7 +54,16 @@ export function parseIngredients(materialsText) {
     const amountRaw = group.match(/분량\s*:\s*([\d.]+)/)?.[1];
     const unit = group.match(/단위\s*:\s*([^|]+)/)?.[1]?.trim();
     if (!name || amountRaw === undefined || seen.has(name)) continue;
-    const amountMg = normalizeAmountToMg(Number(amountRaw), unit);
+    let amountMg = normalizeAmountToMg(Number(amountRaw), unit);
+    // 일부 품목(예: 듀파락시럽 - 원료 자체가 농축액이라 "분량 : 67|단위 : 밀리리터"처럼 부피로 기재됨)은
+    // 분량/단위가 질량이 아니다 - 이 경우 실제 유효성분량은 별도 자유텍스트 "성분정보 : OO로서 66.7그램"
+    // 안에만 들어있다. 제품명으로 값을 추정하지 않고, 이 문서화된 필드 안의 실제 텍스트를 파싱할 때만
+    // 사용한다 - 패턴이 없으면 그대로 포기(null)하고 절대 추측하지 않는다.
+    if (amountMg === null) {
+      const info = group.match(/성분정보\s*:\s*([^|]+)/)?.[1] || '';
+      const fallback = info.match(/([\d.]+)\s*(그램|그람|g|밀리그램|밀리그람|mg|마이크로그램|mcg|µg)/);
+      if (fallback) amountMg = normalizeAmountToMg(Number(fallback[1]), fallback[2]);
+    }
     if (amountMg === null) continue;
     seen.add(name);
     out.push({ name, amountMg, totalText: total });
@@ -237,6 +246,26 @@ export function referenceMlRangeFromMg(mgRange, concentrationMgPerMl) {
 export function referenceUnitRangeFromMg(mgRange, strengthMgPerUnit) {
   if (!mgRange || !(strengthMgPerUnit > 0)) return null;
   return { min: mgRange.min / strengthMgPerUnit, max: mgRange.max / strengthMgPerUnit };
+}
+
+// --- DUR(의약품안전사용서비스) 투여기간주의 원문 파싱 -------------------------------------------------
+// DUR의 용량주의/투여기간주의는 e약은요·제품허가정보의 "공식 허가 용법·용량"과 전혀 다른 별도 출처다 -
+// 이 파일의 다른 어떤 함수도 DUR 텍스트를 referenceMgRange/referenceMlRange 같은 일반 허가용량 범위로
+// 바꾸지 않는다(절대 대체 금지). 이 함수는 오직 DUR 투여기간주의 원문(PROHBT_CONTENT/REMARK)에서 "N일"
+// 상한을 뽑아내는 용도로만 쓰인다.
+//
+// 아주 단순하고 무조건적인 문장 패턴일 때만 숫자를 신뢰한다. 원문에 적응증/예외/조건을 나타내는 표현
+// ("~에 한함", "다만", "제외" 등)이 하나라도 있으면 숫자를 절대 뽑지 않고 hasConditions만 true로 반환한다
+// - 호출부는 이때 숫자 비교를 하지 않고 원문 그대로만 보여줘야 한다(단순 숫자 비교가 위험한 경우).
+const DUR_PERIOD_CONDITION_HINT = /에\s*한함|제외|경우에는|다만|단[,\s]|만약|해당하는\s*경우|환자에서만/;
+export function parseDurPeriodLimitDays(text) {
+  const full = String(text || '');
+  if (!full) return { maxDays: null, hasConditions: false };
+  if (DUR_PERIOD_CONDITION_HINT.test(full)) return { maxDays: null, hasConditions: true };
+  const stop = full.match(/(\d+)\s*일\s*(?:이상\s*)?(?:연속(?:으로)?\s*)?(?:투여|복용|사용)하지\s*(?:않는다|않습니다|마십시오|마세요)/);
+  const within = full.match(/(\d+)\s*일\s*이내로?\s*(?:투여|복용|사용)/);
+  const m = stop || within;
+  return { maxDays: m ? Number(m[1]) : null, hasConditions: false };
 }
 
 // Pure computation core of "용량 분석 보기" (item 4-17 of the request): (처방 1회량 + 공식 성분/함량 +
