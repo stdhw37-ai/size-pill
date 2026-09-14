@@ -25,7 +25,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>액체 용량 측정을 위해 컵을 비추는 용도로만 카메라를 사용합니다. 영상은 저장되거나 외부로 전송되지 않습니다.</string>
+	<string>처방전의 약 이름을 기기에서 읽거나 액체 용기의 기준을 맞추기 위해 카메라를 사용합니다. 이미지와 영상은 앱에 저장하거나 외부로 전송하지 않습니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

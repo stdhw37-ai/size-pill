@@ -1,0 +1,1596 @@
+{
+  "schemaVersion": 1,
+  "pipeline": "parser",
+  "createdAt": "2026-09-14T10:01:43.377Z",
+  "datasetSha256": "34c9576930dc2f767440e199d9e8c2b4c16e69ace6bc77f9aad165daf5794b6f",
+  "coverage": {
+    "registered": 9,
+    "evaluated": 9,
+    "skipped": [],
+    "imagesAvailable": 8,
+    "failed": 0
+  },
+  "summary": {
+    "fixtures": 9,
+    "expectedRows": 22,
+    "predictedRows": 22,
+    "matchedRows": 22,
+    "missingRows": 0,
+    "extraRows": 0,
+    "denominator": 22,
+    "correct": {
+      "productCode": 22,
+      "rawName": 22,
+      "drugName": 22,
+      "dosePerAdministration": 22,
+      "doseUnit": 22,
+      "frequencyPerDay": 22,
+      "durationDays": 22,
+      "drugNameFuzzy": 22,
+      "fullRow": 22
+    },
+    "accuracy": {
+      "productCode": 1,
+      "rawName": 1,
+      "drugName": 1,
+      "dosePerAdministration": 1,
+      "doseUnit": 1,
+      "frequencyPerDay": 1,
+      "durationDays": 1,
+      "drugNameFuzzy": 1,
+      "fullRow": 1
+    }
+  },
+  "actualSources": [
+    "parser:manual-transcription",
+    "parser:synthetic-tokens"
+  ],
+  "byLayout": {
+    "user-reference-unknown": {
+      "fixtures": 1,
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "wide-table": {
+      "fixtures": 1,
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "spaced-text": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "tall-rows": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "dose-before-name": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "rotated-table": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "dim-text": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "simulated-camera": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "compact-table": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    }
+  },
+  "byTag": {
+    "table": {
+      "fixtures": 7,
+      "expectedRows": 18,
+      "predictedRows": 18,
+      "matchedRows": 18,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 18,
+      "correct": {
+        "productCode": 18,
+        "rawName": 18,
+        "drugName": 18,
+        "dosePerAdministration": 18,
+        "doseUnit": 18,
+        "frequencyPerDay": 18,
+        "durationDays": 18,
+        "drugNameFuzzy": 18,
+        "fullRow": 18
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "borderless": {
+      "fixtures": 2,
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "wrapped-name": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "with-code": {
+      "fixtures": 6,
+      "expectedRows": 16,
+      "predictedRows": 16,
+      "matchedRows": 16,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 16,
+      "correct": {
+        "productCode": 16,
+        "rawName": 16,
+        "drugName": 16,
+        "dosePerAdministration": 16,
+        "doseUnit": 16,
+        "frequencyPerDay": 16,
+        "durationDays": 16,
+        "drugNameFuzzy": 16,
+        "fullRow": 16
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "without-code": {
+      "fixtures": 3,
+      "expectedRows": 6,
+      "predictedRows": 6,
+      "matchedRows": 6,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 6,
+      "correct": {
+        "productCode": 6,
+        "rawName": 6,
+        "drugName": 6,
+        "dosePerAdministration": 6,
+        "doseUnit": 6,
+        "frequencyPerDay": 6,
+        "durationDays": 6,
+        "drugNameFuzzy": 6,
+        "fullRow": 6
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "skewed": {
+      "fixtures": 2,
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "low-light": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "mobile-photo": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "decimal-dose": {
+      "fixtures": 6,
+      "expectedRows": 12,
+      "predictedRows": 12,
+      "matchedRows": 12,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 12,
+      "correct": {
+        "productCode": 12,
+        "rawName": 12,
+        "drugName": 12,
+        "dosePerAdministration": 12,
+        "doseUnit": 12,
+        "frequencyPerDay": 12,
+        "durationDays": 12,
+        "drugNameFuzzy": 12,
+        "fullRow": 12
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "liquid": {
+      "fixtures": 7,
+      "expectedRows": 18,
+      "predictedRows": 18,
+      "matchedRows": 18,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 18,
+      "correct": {
+        "productCode": 18,
+        "rawName": 18,
+        "drugName": 18,
+        "dosePerAdministration": 18,
+        "doseUnit": 18,
+        "frequencyPerDay": 18,
+        "durationDays": 18,
+        "drugNameFuzzy": 18,
+        "fullRow": 18
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "reordered-columns": {
+      "fixtures": 1,
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    }
+  },
+  "bySource": {
+    "transcribed-reference": {
+      "fixtures": 1,
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    },
+    "synthetic": {
+      "fixtures": 8,
+      "expectedRows": 18,
+      "predictedRows": 18,
+      "matchedRows": 18,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 18,
+      "correct": {
+        "productCode": 18,
+        "rawName": 18,
+        "drugName": 18,
+        "dosePerAdministration": 18,
+        "doseUnit": 18,
+        "frequencyPerDay": 18,
+        "durationDays": 18,
+        "drugNameFuzzy": 18,
+        "fullRow": 18
+      },
+      "accuracy": {
+        "productCode": 1,
+        "rawName": 1,
+        "drugName": 1,
+        "dosePerAdministration": 1,
+        "doseUnit": 1,
+        "frequencyPerDay": 1,
+        "durationDays": 1,
+        "drugNameFuzzy": 1,
+        "fullRow": 1
+      }
+    }
+  },
+  "fixtures": {
+    "current-reference": {
+      "id": "current-reference",
+      "source": "transcribed-reference",
+      "tags": [
+        "table",
+        "with-code",
+        "liquid"
+      ],
+      "layoutFamily": "user-reference-unknown",
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 2,
+          "predictedIndex": 2,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 3,
+          "predictedIndex": 3,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": "644913501",
+            "rawName": "듀파락-이지시럽/15mL/포",
+            "drugName": "듀파락-이지시럽",
+            "dosePerAdministration": 1,
+            "doseUnit": "포",
+            "frequencyPerDay": 3,
+            "durationDays": 10
+          },
+          {
+            "productCode": "649401610",
+            "rawName": "에도스캡슐/1캡슐",
+            "drugName": "에도스캡슐",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          },
+          {
+            "productCode": "650202970",
+            "rawName": "애니코프캡슐300mg/1캡슐",
+            "drugName": "애니코프캡슐300mg",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          },
+          {
+            "productCode": "642204150",
+            "rawName": "셀벡스캡슐(내복)/1캡슐",
+            "drugName": "셀벡스캡슐(내복)",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          }
+        ],
+        "source": "parser:manual-transcription"
+      },
+      "ocrSha256": "ac6adad6a311ba07ffdc9a47674361cb9774212d0c49a260b046ef9e3cda06d4",
+      "imageSha256": null
+    },
+    "reference-rendered": {
+      "id": "reference-rendered",
+      "source": "synthetic",
+      "tags": [
+        "table",
+        "with-code",
+        "liquid"
+      ],
+      "layoutFamily": "wide-table",
+      "expectedRows": 4,
+      "predictedRows": 4,
+      "matchedRows": 4,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 4,
+      "correct": {
+        "productCode": 4,
+        "rawName": 4,
+        "drugName": 4,
+        "dosePerAdministration": 4,
+        "doseUnit": 4,
+        "frequencyPerDay": 4,
+        "durationDays": 4,
+        "drugNameFuzzy": 4,
+        "fullRow": 4
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 2,
+          "predictedIndex": 2,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 3,
+          "predictedIndex": 3,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": "644913501",
+            "rawName": "듀파락-이지시럽/15mL/포",
+            "drugName": "듀파락-이지시럽",
+            "dosePerAdministration": 1,
+            "doseUnit": "포",
+            "frequencyPerDay": 3,
+            "durationDays": 10
+          },
+          {
+            "productCode": "649401610",
+            "rawName": "에도스캡슐/1캡슐",
+            "drugName": "에도스캡슐",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          },
+          {
+            "productCode": "650202970",
+            "rawName": "애니코프캡슐300mg/1캡슐",
+            "drugName": "애니코프캡슐300mg",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          },
+          {
+            "productCode": "642204150",
+            "rawName": "셀벡스캡슐(내복)/1캡슐",
+            "drugName": "셀벡스캡슐(내복)",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "bb3bcf4c37142c60ea2c3235da296c1659bc7278f8c8b2b8dec4d190a3a3e7f1",
+      "imageSha256": "9e46476d56a8c6837213e33ad3b0dfbc8296e0d0f8a301f80f18d6cdaa4f6455"
+    },
+    "borderless": {
+      "id": "borderless",
+      "source": "synthetic",
+      "tags": [
+        "borderless",
+        "without-code",
+        "decimal-dose",
+        "liquid"
+      ],
+      "layoutFamily": "spaced-text",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": null,
+            "rawName": "가상알파정10mg/1정",
+            "drugName": "가상알파정10mg",
+            "dosePerAdministration": 0.5,
+            "doseUnit": "정",
+            "frequencyPerDay": 2,
+            "durationDays": 7
+          },
+          {
+            "productCode": null,
+            "rawName": "가상베타시럽/5mL",
+            "drugName": "가상베타시럽",
+            "dosePerAdministration": 2.5,
+            "doseUnit": "mL",
+            "frequencyPerDay": 3,
+            "durationDays": 14
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "4cbf90fc687ffcff2447843312b0f47fa9961f2bf2c58de3eb3aefd818efccde",
+      "imageSha256": "b087ebc46ca0d8a63263135d9f67ca33fa74d3f48f75a82fd70d9c0386238538"
+    },
+    "wrapped": {
+      "id": "wrapped",
+      "source": "synthetic",
+      "tags": [
+        "table",
+        "wrapped-name",
+        "with-code",
+        "decimal-dose"
+      ],
+      "layoutFamily": "tall-rows",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": "123456789",
+            "rawName": "가상긴이름-서방정200mg/1정",
+            "drugName": "가상긴이름-서방정200mg",
+            "dosePerAdministration": 0.5,
+            "doseUnit": "정",
+            "frequencyPerDay": 1,
+            "durationDays": 30
+          },
+          {
+            "productCode": "234567890",
+            "rawName": "가상감마캡슐(내복)/1캡슐",
+            "drugName": "가상감마캡슐(내복)",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 10
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "de193be1a68cdc6a2679b8dceb77d08a25aea190fe392a469f5b16c0b5665a1c",
+      "imageSha256": "c9c739fa4a02884b90b57dfd5f3df56d9ef89b6f0e2ed09a1476a36e05bac7a5"
+    },
+    "reordered": {
+      "id": "reordered",
+      "source": "synthetic",
+      "tags": [
+        "table",
+        "without-code",
+        "reordered-columns",
+        "decimal-dose",
+        "liquid"
+      ],
+      "layoutFamily": "dose-before-name",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": null,
+            "rawName": "가상알파정10mg/1정",
+            "drugName": "가상알파정10mg",
+            "dosePerAdministration": 0.5,
+            "doseUnit": "정",
+            "frequencyPerDay": 2,
+            "durationDays": 7
+          },
+          {
+            "productCode": null,
+            "rawName": "가상베타시럽/5mL",
+            "drugName": "가상베타시럽",
+            "dosePerAdministration": 2.5,
+            "doseUnit": "mL",
+            "frequencyPerDay": 3,
+            "durationDays": 14
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "b81c9bee5220b157f1753808f5d82144b77030eaf839b26c6fe6a164cc1d6165",
+      "imageSha256": "13c922bd1f15b054edb696c4cefb779068130a611ca2e48433751d7a08f80c47"
+    },
+    "skewed": {
+      "id": "skewed",
+      "source": "synthetic",
+      "tags": [
+        "table",
+        "with-code",
+        "skewed",
+        "decimal-dose"
+      ],
+      "layoutFamily": "rotated-table",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": "123456789",
+            "rawName": "가상긴이름-서방정200mg/1정",
+            "drugName": "가상긴이름-서방정200mg",
+            "dosePerAdministration": 0.5,
+            "doseUnit": "정",
+            "frequencyPerDay": 1,
+            "durationDays": 30
+          },
+          {
+            "productCode": "234567890",
+            "rawName": "가상감마캡슐(내복)/1캡슐",
+            "drugName": "가상감마캡슐(내복)",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 10
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "5f9df24efa536b91cb687b6da28e0c494c17e4d739e8800f8556e39349635f8d",
+      "imageSha256": "63fb450a54edbdca8b6d76ca587618e50062f8def76cd332580c4d069fc9b979"
+    },
+    "low-light": {
+      "id": "low-light",
+      "source": "synthetic",
+      "tags": [
+        "borderless",
+        "without-code",
+        "low-light",
+        "liquid",
+        "decimal-dose"
+      ],
+      "layoutFamily": "dim-text",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": null,
+            "rawName": "가상알파정10mg/1정",
+            "drugName": "가상알파정10mg",
+            "dosePerAdministration": 0.5,
+            "doseUnit": "정",
+            "frequencyPerDay": 2,
+            "durationDays": 7
+          },
+          {
+            "productCode": null,
+            "rawName": "가상베타시럽/5mL",
+            "drugName": "가상베타시럽",
+            "dosePerAdministration": 2.5,
+            "doseUnit": "mL",
+            "frequencyPerDay": 3,
+            "durationDays": 14
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "4cbf90fc687ffcff2447843312b0f47fa9961f2bf2c58de3eb3aefd818efccde",
+      "imageSha256": "c7593e07863cf623f6d098993d413c75d144a53a2329f79bd721ea74475a6491"
+    },
+    "mobile-simulated": {
+      "id": "mobile-simulated",
+      "source": "synthetic",
+      "tags": [
+        "table",
+        "with-code",
+        "mobile-photo",
+        "liquid",
+        "skewed"
+      ],
+      "layoutFamily": "simulated-camera",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": "644913501",
+            "rawName": "듀파락-이지시럽/15mL/포",
+            "drugName": "듀파락-이지시럽",
+            "dosePerAdministration": 1,
+            "doseUnit": "포",
+            "frequencyPerDay": 3,
+            "durationDays": 10
+          },
+          {
+            "productCode": "649401610",
+            "rawName": "에도스캡슐/1캡슐",
+            "drugName": "에도스캡슐",
+            "dosePerAdministration": 1,
+            "doseUnit": "캡슐",
+            "frequencyPerDay": 2,
+            "durationDays": 60
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "810a3f04403d7b5be7e8ae310370dc137b0a3dcf5ada7d89b574da84d2d7fd03",
+      "imageSha256": "a225e76948212fd8f01a6df37148fbc0704557bf7800a8386c17c32029a63a95"
+    },
+    "decimal-liquid": {
+      "id": "decimal-liquid",
+      "source": "synthetic",
+      "tags": [
+        "table",
+        "with-code",
+        "decimal-dose",
+        "liquid"
+      ],
+      "layoutFamily": "compact-table",
+      "expectedRows": 2,
+      "predictedRows": 2,
+      "matchedRows": 2,
+      "missingRows": 0,
+      "extraRows": 0,
+      "denominator": 2,
+      "correct": {
+        "productCode": 2,
+        "rawName": 2,
+        "drugName": 2,
+        "dosePerAdministration": 2,
+        "doseUnit": 2,
+        "frequencyPerDay": 2,
+        "durationDays": 2,
+        "drugNameFuzzy": 2,
+        "fullRow": 2
+      },
+      "rows": [
+        {
+          "expectedIndex": 0,
+          "predictedIndex": 0,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        },
+        {
+          "expectedIndex": 1,
+          "predictedIndex": 1,
+          "checks": {
+            "productCode": true,
+            "rawName": true,
+            "drugName": true,
+            "dosePerAdministration": true,
+            "doseUnit": true,
+            "frequencyPerDay": true,
+            "durationDays": true
+          },
+          "fullRow": true
+        }
+      ],
+      "extraIndices": [],
+      "error": null,
+      "prediction": {
+        "medications": [
+          {
+            "productCode": "345678901",
+            "rawName": "가상델타정/1정",
+            "drugName": "가상델타정",
+            "dosePerAdministration": 0.5,
+            "doseUnit": "정",
+            "frequencyPerDay": 1,
+            "durationDays": 60
+          },
+          {
+            "productCode": "456789012",
+            "rawName": "가상액체-시럽/15mL/포",
+            "drugName": "가상액체-시럽",
+            "dosePerAdministration": 1,
+            "doseUnit": "포",
+            "frequencyPerDay": 3,
+            "durationDays": 10
+          }
+        ],
+        "source": "parser:synthetic-tokens"
+      },
+      "ocrSha256": "9b236cbe7c46a252dd1c8648dc5bdebaba57a67a7950b52544602c9daec9f785",
+      "imageSha256": "fcf94119e159376dd0011377b744ad26d07f99a7effb287ccf6f487ac54affc6"
+    }
+  }
+}

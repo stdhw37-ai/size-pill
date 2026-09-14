@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "medications": [
+    {
+      "productCode": "123456789",
+      "rawName": "가상긴이름-서방정200mg/1정",
+      "drugName": "가상긴이름-서방정200mg",
+      "dosePerAdministration": 0.5,
+      "doseUnit": "정",
+      "frequencyPerDay": 1,
+      "durationDays": 30
+    },
+    {
+      "productCode": "234567890",
+      "rawName": "가상감마캡슐(내복)/1캡슐",
+      "drugName": "가상감마캡슐(내복)",
+      "dosePerAdministration": 1,
+      "doseUnit": "캡슐",
+      "frequencyPerDay": 2,
+      "durationDays": 10
+    }
+  ]
+}

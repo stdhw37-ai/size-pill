@@ -1,0 +1,16 @@
+{
+  "name": "size-pill",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "npm ci",
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": {
+      "label": "size-pill dev",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    }
+  }
+}

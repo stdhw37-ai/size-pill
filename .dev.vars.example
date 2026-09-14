@@ -7,3 +7,13 @@ SUPABASE_SECRET_KEY=""
 SUPABASE_SERVICE_ROLE_KEY=""
 # Secret key 사용 시 SUPABASE_SECRET_KEY="sb_secret_..."
 # service_role JWT 사용 시 SUPABASE_SERVICE_ROLE_KEY="발급받은 service_role 키"
+
+# 처방전 이미지 분석(1차 경로)은 선택 사항입니다. 아무것도 설정하지 않으면 기기 내 OCR(fallback)만 사용합니다.
+# provider: "anthropic", "openai", "google" (src/prescription-vision.js의 PROVIDERS에 추가하면 다른 provider도 가능)
+PRESCRIPTION_VISION_PROVIDER=""
+PRESCRIPTION_VISION_API_KEY=""
+# 선택: provider의 기본 모델을 바꾸고 싶을 때만 설정 (기본값: anthropic=claude-sonnet-5, openai=gpt-4o)
+PRESCRIPTION_VISION_MODEL=""
+# Google Cloud Vision은 별도 키 변수를 씁니다(위 PRESCRIPTION_VISION_API_KEY가 아님). 이 키만 설정하면
+# PRESCRIPTION_VISION_PROVIDER를 비워둬도 자동으로 google이 선택됩니다.
+GOOGLE_VISION_API_KEY=""

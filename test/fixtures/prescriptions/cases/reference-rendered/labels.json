@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "medications": [
+    {
+      "productCode": "644913501",
+      "rawName": "듀파락-이지시럽/15mL/포",
+      "drugName": "듀파락-이지시럽",
+      "dosePerAdministration": 1,
+      "doseUnit": "포",
+      "frequencyPerDay": 3,
+      "durationDays": 10
+    },
+    {
+      "productCode": "649401610",
+      "rawName": "에도스캡슐/1캡슐",
+      "drugName": "에도스캡슐",
+      "dosePerAdministration": 1,
+      "doseUnit": "캡슐",
+      "frequencyPerDay": 2,
+      "durationDays": 60
+    },
+    {
+      "productCode": "650202970",
+      "rawName": "애니코프캡슐300mg/1캡슐",
+      "drugName": "애니코프캡슐300mg",
+      "dosePerAdministration": 1,
+      "doseUnit": "캡슐",
+      "frequencyPerDay": 2,
+      "durationDays": 60
+    },
+    {
+      "productCode": "642204150",
+      "rawName": "셀벡스캡슐(내복)/1캡슐",
+      "drugName": "셀벡스캡슐(내복)",
+      "dosePerAdministration": 1,
+      "doseUnit": "캡슐",
+      "frequencyPerDay": 2,
+      "durationDays": 60
+    }
+  ]
+}

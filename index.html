@@ -102,7 +102,8 @@
        a thumb. Results are revealed in batches of 5 via #showMoreResults instead (see app.js). */
     .results{display:grid;gap:7px;margin-top:10px}
     .show-more{width:100%;border:1px solid var(--line);background:#fff;color:var(--green);min-height:44px;border-radius:var(--r-md);font-weight:750;font-size:.9rem;margin-top:4px}
-    .result{display:flex;align-items:center;gap:10px;min-width:0;background:#f7faf8;border:2px solid var(--line);padding:8px;text-align:left;border-radius:var(--r-md);min-height:var(--tap)}
+    .result{position:relative;display:flex;align-items:center;gap:10px;min-width:0;background:#f7faf8;border:2px solid var(--line);padding:8px;padding-right:76px;text-align:left;border-radius:var(--r-md);min-height:var(--tap)}
+    .result .save-heart{position:absolute;top:6px;right:6px;font-size:.72rem;padding:0 8px;min-height:30px}
     .result[aria-pressed="true"]{border-color:var(--green);background:var(--mint)}
     .result-photo{width:42px;height:42px;object-fit:contain;flex:none;background:#fff;border-radius:8px;border:1px solid var(--line)}
     .result-copy{min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:1px}
@@ -321,6 +322,73 @@
       #pillTool .controls{flex:0 0 400px}
       .camera-wrap{min-height:460px}
     }
+    /* Shared vertical flow on phones and desktop. */
+    #screenHome,.flow{width:100%;max-width:720px;margin:0 auto}
+    .home-cards{grid-template-columns:1fr;max-width:100%;gap:12px}
+    .home-card{display:grid;grid-template-columns:40px 1fr 24px;text-align:left;min-height:112px;padding:20px;gap:6px 12px;justify-items:start}
+    .home-card .ic{grid-row:1/3;font-size:1.8rem}.home-card b{font-size:1.05rem}.home-card .desc{display:block;grid-column:2;max-width:none;font-size:.88rem;line-height:1.5;opacity:.85}.home-card .arrow{display:block;grid-column:3;grid-row:1/3;font-size:1.3rem}
+    .home-hero{text-align:left;padding:16px 0 24px}.home-hero h2{font-size:1.8rem}
+    .liquid-tool.active{display:flex;flex-direction:column;gap:16px}.flow-panel{padding:20px}.flow-panel .field{margin:14px 0}.flow-panel h2{margin-top:12px}
+    .flow-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.flow-list{display:grid;gap:12px;margin:16px 0}.flow-list button{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}.flow-list small{display:block;margin-top:5px;color:var(--muted)}
+
+    .file-button{position:relative;display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--white);cursor:pointer}.file-button input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}.file-button:focus-within{outline:2px solid var(--green)}
+    .rx-group{border:1px solid var(--line);border-radius:16px;padding:16px;margin:0;min-width:0}.rx-choice{display:flex;align-items:flex-start;gap:12px;padding:12px 0;overflow-wrap:anywhere}.rx-choice input{width:22px;height:22px;flex-shrink:0}.rx-choice small{display:block;color:var(--muted);margin-top:4px}.rx-strong-match{color:var(--green)!important;font-weight:600}
+    .rx-silhouette{display:block;background:#bad9cc;border:1px solid #548571;max-width:100%;margin:14px 0;border-radius:50%}
+    #fractions button[aria-pressed="true"]{background:var(--green);color:white}.fraction-volume{text-align:center;font-size:1.1rem;font-weight:800}.advanced-grid{display:grid;gap:16px}.advanced-grid .liquid-controls{flex:auto}#cameraAdvanced summary{cursor:pointer;min-height:44px;font-weight:800}
+    .flow button:not(.back-btn){min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff;font-weight:700}.flow button:hover:not(:disabled){border-color:#83ad9d}.flow #rxCompare,.flow #liquidSearch button{background:var(--green);color:white}.flow #rxCompare{width:100%;margin:8px 0 16px}.flow-list button{padding:16px!important;box-shadow:var(--shadow-sm)}.flow-list small{font-weight:400}.flow-actions button{flex:1;min-width:46px;padding:10px 8px!important}
+    #liquidSearch{display:flex;align-items:flex-end;gap:8px}#liquidSearch .field{flex:1;min-width:0;margin-bottom:0}#liquidSearch button{flex:none;height:48px}#liquidQuery{width:100%}.guide-options{margin:12px 0}.guide-options summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;color:var(--green);font-weight:700}.flow h3{margin-bottom:10px}#fractions{margin-top:0}.flow small{overflow-wrap:anywhere}
+    [hidden]{display:none!important}input,select,textarea{font-size:16px}
+    /* Photo shows at up to its own natural size (never force-upscaled - a small sharp crop beats a
+       large blurry one) and is capped to a modest height so the whole pouch/bottle is visible at a
+       glance; .liquid-photo-frame shrink-wraps to the rendered image so the overlay lines below can
+       size themselves to the image's own width instead of the full card width. */
+    .liquid-photo-stage{display:flex;flex-direction:column;align-items:center;gap:10px;margin:12px auto;max-width:100%}
+    .liquid-photo-frame{position:relative;display:inline-block;line-height:0;max-width:100%}
+    .liquid-photo-frame img,.liquid-photo-frame svg{display:block;width:auto;height:auto;max-width:100%;max-height:300px;object-fit:contain;margin:0 auto}
+    @media(min-width:768px){.liquid-photo-frame img,.liquid-photo-frame svg{max-height:420px}}
+    .photo-zoom-btn{background:none;border:1px solid var(--line);border-radius:99px;padding:6px 14px;font-size:.85rem;font-weight:700;color:var(--green)}
+    .usable-guide{position:absolute;left:-6%;right:-6%;height:0;border-top:2px dashed rgba(30,40,38,.45);pointer-events:none;z-index:1}
+    .photo-fraction-line{position:absolute;left:-20px;right:-20px;height:0;border-top:3px dashed #c90055;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff);pointer-events:none;z-index:2}.photo-fraction-line span{position:absolute;right:0;top:-14px;transform:translateX(50%);background:#c90055;color:white;border:2px solid white;border-radius:9px;padding:5px 7px;line-height:1;font-weight:800;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.35)}.flow input[type=range]{width:100%;min-height:44px;accent-color:var(--green)}#fractions,#uploadFractions,#bottleFractions{display:grid;grid-template-columns:repeat(3,1fr)}.rx-selected-card{padding:16px;border:1px solid var(--line);border-radius:14px;background:white}.rx-selected-card p{margin:5px 0}.rx-group legend{font-weight:800}.rx-group .flow-actions{margin-bottom:0}
+    /* Manual crop-region picker for user-uploaded photos (no saved override exists for an arbitrary
+       photo, so this is the fallback when automatic pouch detection fails on it). */
+    .liquid-photo-frame-raw img{max-height:420px}
+    .container-box{position:absolute;border:2px dashed #007c91;background:#00a7bf12;pointer-events:none}
+    .link-btn{background:none;border:0;padding:0;color:var(--green);font-weight:700;text-decoration:underline;cursor:pointer;min-height:auto}
+    .guide-options-block{margin:12px 0}
+    /* ♡/♥ save toggle - a sibling of the card's own select button, never nested inside it (avoids
+       invalid nested-interactive-element markup and keeps "select" vs "save" unambiguous to tap). */
+    .save-row{display:flex;align-items:stretch;gap:8px}
+    .save-row>.result,.save-row>button:not(.save-heart){flex:1;min-width:0}
+    /* width:auto!important overrides .flow-list button{width:100%} above, which would otherwise
+       also match this <button> and (since flex-basis:auto inherits an explicit width) make it claim
+       the whole flex row instead of just its own content - the actual "select" button never got its
+       flex-grow:1 room to expand into. */
+    .save-heart{flex:0 0 auto;width:auto!important;background:#fff;border:1px solid var(--line);border-radius:12px;padding:0 12px;font-weight:700;color:#c90055;min-height:var(--tap);white-space:nowrap}
+    .save-heart[aria-pressed="true"]{background:#ffe9f0;border-color:#c90055}
+    .rx-choice{flex-wrap:wrap}.rx-choice .save-heart{margin-left:auto}
+    #pillSaveBtn{margin-top:8px}
+    .storage-card{display:flex;align-items:flex-start;gap:10px;padding:16px!important;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow-sm)}
+    .storage-card .storage-check{width:22px;height:22px;flex-shrink:0;margin-top:2px;accent-color:var(--green)}
+    .storage-card-info{flex:1;min-width:0}
+    .storage-card-info b{display:block}
+    .storage-card .flow-actions{flex-direction:column;flex-wrap:nowrap;gap:6px;margin:0;flex:0 0 auto}
+    .storage-card .flow-actions button{width:auto;min-width:88px}
+    /* 처방 용량 분석 (섹션 10/11) */
+    .rx-dose-summary{font-weight:700;color:var(--green-dark,var(--green));margin:6px 0}
+    .rx-dose-detail{margin-top:10px}
+    .rx-dose-detail:not(:empty){padding-top:10px;border-top:1px solid var(--line)}
+    .rx-dose-detail h4{margin:14px 0 6px;font-size:.95rem}
+    .rx-dose-ingredient{background:#f7faf8;border-radius:10px;padding:10px 12px;margin:8px 0}
+    .rx-dose-ingredient b{display:block;margin-bottom:2px}
+    .rx-dose-ingredient p{margin:2px 0;font-size:.88rem}
+    .rx-range-block{margin:12px 0}
+    .rx-range-label{font-weight:700;margin-bottom:4px}
+    .rx-position{font-weight:700;margin-top:6px}
+    .dose-range-bar{margin:4px 0}
+    .dose-range-track{position:relative;height:10px;border-radius:99px;background:linear-gradient(90deg,#dbe9e2,#bcd9cb,#dbe9e2)}
+    .dose-range-marker{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:var(--green);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transform:translate(-50%,-50%)}
+    .dose-range-labels{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:2px}
+    #rxPatientInfo summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;color:var(--green);font-weight:700}
   </style>
 </head>
 <body>
@@ -348,8 +416,10 @@
       <p>약의 실제 크기를 화면에서 확인하세요</p>
     </div>
     <div class="home-cards">
-      <button class="home-card primary" type="button" data-mode="pill"><span class="ic">💊</span><b>알약 실물크기<br>확인하기</b><span class="desc">약을 검색해서 실제 크기와 형태를 확인하세요</span><span class="arrow">→</span></button>
-      <button class="home-card" type="button" data-mode="liquid"><span class="ic">💧</span><b>액체 용량<br>확인하기</b><span class="desc">카메라로 컵의 액체 높이를 어림해보세요</span><span class="arrow">→</span></button>
+      <button class="home-card primary" type="button" data-mode="pill"><span class="ic">💊</span><b>알약 실물크기 확인</b><span class="desc">약을 검색해서 실제 크기와 형태를 확인하세요</span><span class="arrow">→</span></button>
+      <button class="home-card" type="button" data-mode="prescription"><span class="ic">📄</span><b>처방전으로 약 찾기</b><span class="desc">처방전을 촬영하면 약 목록을 확인할 수 있어요</span><span class="arrow">→</span></button>
+      <button class="home-card" type="button" data-mode="liquid"><span class="ic">💧</span><b>액체약 용량 가이드</b><span class="desc">시럽을 검색하고 1/2, 1/3 등 대략적인 위치를 확인하세요</span><span class="arrow">→</span></button>
+      <button class="home-card" type="button" data-mode="storage"><span class="ic">♥</span><b>내 약 보관함</b><span class="desc">관심 있는 약을 저장해두고 나중에 크기를 비교하세요</span><span class="arrow">→</span></button>
     </div>
     <div id="recentSection" hidden>
       <div class="home-section-title">최근 확인한 약</div>
@@ -374,6 +444,7 @@
     <section class="card controls" aria-labelledby="input-title">
       <div class="back-row to-home"><button class="back-btn" type="button" id="backToHomeFromSearch">홈</button></div>
       <div class="eyebrow">알약 실물크기</div><h2 id="input-title">어떤 약의 크기가 궁금하세요?</h2>
+      <div id="rxSearchContext" class="tip" hidden><b id="rxSearchTitle"></b><p>공식 검색 결과에서 제품을 누르면 처방약 목록에 추가합니다.</p><button type="button" id="rxSearchCancel">처방전으로 돌아가기</button></div>
       <form id="searchForm" class="search-form"><label for="query">의약품 이름</label><div class="search-row"><input id="query" type="search" minlength="2" maxlength="80" placeholder="예: 타이레놀" autocomplete="off"><button type="submit">검색</button></div>
         <details class="search-filters"><summary>업체명·품목일련번호로 검색 조건 추가</summary><label for="companyQuery">업체명</label><input id="companyQuery" maxlength="80" placeholder="제조·수입업체 이름" autocomplete="off"><label for="itemSeqQuery">품목일련번호</label><input id="itemSeqQuery" maxlength="20" pattern="[0-9]+" inputmode="numeric" placeholder="숫자로 입력" autocomplete="off"></details>
       </form>
@@ -394,6 +465,7 @@
             <p class="rh-name" id="resultName">직접 입력 예시</p>
             <p class="rh-company" id="resultCompany">특정 의약품의 치수가 아닙니다</p>
             <p class="quick-facts" id="quickFacts" hidden></p>
+            <button type="button" id="pillSaveBtn" class="save-heart" hidden>♡ 저장</button>
           </div>
         </div>
         <div id="sizeSummary" class="size-summary" hidden></div>
@@ -445,7 +517,150 @@
     </section>
   </div>
 
-  <div class="grid liquid-tool" id="liquidTool">
+  <section id="prescriptionTool" class="flow" hidden>
+    <button type="button" class="back-btn" data-mode="home">홈</button>
+    <h2>처방전으로 약 찾기</h2><p class="lead">약 이름과 처방내용을 확인·수정한 뒤 공식 제품 후보를 선택하세요.</p>
+    <div class="card flow-panel">
+      <p class="tip">처방전에는 이름·병원·주민정보가 포함될 수 있습니다. 약 이름과 투여량·횟수·일수 헤더가 포함된 표 부분을 촬영해주세요. AI 분석이 가능할 때는 이미지를 서버로 전송해 분석하며, 분석 직후 즉시 폐기하고 어떤 데이터베이스에도 저장하지 않습니다. AI 분석을 쓸 수 없을 때는 기기 안에서만 분석하며 서버로 전송되지 않습니다. 어느 경우든 이미지를 영구 저장하지 않습니다. 사진 보관함의 원본은 유지됩니다.</p>
+      <div class="flow-actions"><label class="file-button">처방전 촬영<input id="rxCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="rxPhoto" type="file" accept="image/*"></label><button type="button" id="rxCancel" hidden>분석 취소</button></div>
+      <p id="rxStatus" role="status" aria-live="polite"></p>
+      <p class="tip">OCR에서 추출한 약 이름·함량만 공식 검색에 전송합니다. 인식 오류가 있을 수 있으므로 항목마다 이름·함량·제조사를 확인해 선택해주세요.</p>
+      <div class="flow-actions"><button id="rxAdd" type="button">+ 약 직접 추가</button><button id="rxClear" type="button">처방전 내용 지우기</button></div>
+    </div>
+    <details id="rxPatientInfo" class="card flow-panel">
+      <summary>환자 정보 (처방 용량 분석용, 선택)</summary>
+      <p class="tip">체중을 입력하지 않으면 체중(mg/kg) 기준 비교는 표시하지 않습니다. 여기 입력한 정보는 이 기기에만 저장되며 서버로 전송되지 않습니다.</p>
+      <label class="field"><span>생년월일 또는 나이 (처방전에서 읽혔다면 확인·수정하세요)</span><input id="rxPatientDob" class="num" type="text" placeholder="예: 2026년생 또는 만 3세"></label>
+      <label class="field"><span>체중 (kg)</span><input id="rxPatientWeight" class="num" type="number" min="0.5" max="200" step="0.1" placeholder="예: 10.5"></label>
+    </details>
+    <h3 id="rxFoundTitle" hidden>처방전에서 찾은 약</h3><div id="rxCandidates" class="flow-list"></div>
+    <section id="rxSelectedSection" hidden><h3 id="rxSelectedTitle">선택한 처방약 0개</h3><div id="rxSelectedList" class="flow-list"></div></section>
+    <button id="rxCompare" type="button" disabled>선택한 약 크기 비교하기</button>
+    <section id="rxComparison" hidden><h2>처방약 크기 비교</h2><p class="tip">같은 mm 비율의 위에서 본 단순 모형입니다. 색상·각인·정확한 외형은 재현하지 않습니다. 실물크기는 개별 제품에서 화면 보정 후 확인하세요.</p><div id="rxCompareList" class="flow-list"></div></section>
+  </section>
+  <div class="grid liquid-tool flow" id="liquidTool">
+    <section class="card flow-panel">
+      <button type="button" class="back-btn" data-mode="home">홈</button><h2>액체약 용량 가이드</h2><p class="lead">어떻게 확인할까요?</p>
+      <div class="flow-actions"><button type="button" id="liquidWaySearch" aria-pressed="true">액체약 검색</button><button type="button" id="liquidWayUpload" aria-pressed="false">포/스틱 사진으로 직접 확인</button></div>
+      <div id="liquidSearchWay">
+        <form id="liquidSearch"><label class="field"><span>액체약 이름</span><input id="liquidQuery" class="num" type="search" required minlength="2" maxlength="80" placeholder="예: 코미시럽"></label><button>검색</button></form>
+        <p id="liquidStatus" role="status"></p><div id="liquidResults" class="flow-list"></div><button id="liquidMore" type="button" hidden>다음 검색 결과</button>
+      </div>
+      <div id="liquidUploadWay" hidden>
+        <p class="tip">건강기능식품 등 공식 사진이 없는 제품도 사진만으로 분할 위치를 확인할 수 있습니다. 사진은 기기 안에서만 처리하며 서버로 전송·저장하지 않습니다.</p>
+        <div class="flow-actions"><label class="file-button">사진 촬영<input id="uploadCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="uploadFile" type="file" accept="image/*"></label></div>
+        <p id="uploadPickStatus" role="status"></p>
+      </div>
+    </section>
+    <section id="containerTypeChoice" class="card flow-panel" hidden>
+      <h2 id="containerTypeProductName"></h2><p id="containerTypeProductCompany"></p>
+      <p id="containerTypeProductForm" class="cal-note" hidden></p><p id="containerTypeProductPackaging" class="cal-note" hidden></p>
+      <h3>포장 형태를 자동으로 확인하지 못했습니다</h3>
+      <p class="tip">공식 정보만으로는 포장 형태를 확실히 판단하지 못했습니다. 제품은 정상적으로 찾았습니다 - 실제 포장을 보고 선택해주세요.</p>
+      <div class="flow-actions">
+        <button type="button" data-container-type="pouch">1회용 포/스틱</button>
+        <button type="button" data-container-type="bottle">병</button>
+        <button type="button" id="containerTypeUnsure">잘 모르겠어요</button>
+      </div>
+    </section>
+    <section id="bottleNotice" class="card flow-panel" hidden>
+      <h2 id="bottleProductName"></h2><p id="bottleProductCompany"></p><p id="bottleProductFlavor" hidden></p><p id="bottleProductPackaging" class="cal-note" hidden></p>
+      <p id="bottlePhotoStatus" role="status"></p>
+      <div class="liquid-photo-stage">
+        <div class="liquid-photo-frame"><img id="bottleProductPhoto" alt="" hidden></div>
+      </div>
+      <h3>⚠ 병 제품은 분할선으로 용량을 확인할 수 없어요</h3>
+      <p class="tip">병 모양에 따라 액체 높이와 실제 용량이 정확히 비례하지 않을 수 있습니다.<br>정확한 복용량은 눈금이 있는 계량컵, 계량스푼 또는 경구용 주사기로 측정해주세요.</p>
+      <div class="flow-actions"><button type="button" id="bottleCalcBtn">복용량 계산하기</button><button type="button" id="bottleSearchAgainBtn">다른 제품 검색</button></div>
+      <p class="tip">사진을 직접 확인해보니 실제로는 낱개 포장된 1회용 포/스틱이라면 <button type="button" id="bottleIsActuallyPouch" class="link-btn">여기를 눌러 분할 가이드 보기</button></p>
+    </section>
+    <section id="bottleCalculator" class="card flow-panel" hidden>
+      <h2>복용량 계산하기</h2><p class="tip">병 사진 위에는 선을 표시하지 않습니다. 계산된 용량은 참고용이며, 실제 복용은 계량도구로 측정하세요.</p>
+      <div id="bottleFractions" class="flow-actions"><button type="button" data-bottle-fraction="0.5">1/2</button><button type="button" data-bottle-fraction="0.3333333333333333">1/3</button><button type="button" data-bottle-fraction="0.25">1/4</button><button type="button" data-bottle-fraction="0.6666666666666666">2/3</button><button type="button" data-bottle-fraction="0.75">3/4</button></div>
+      <label class="field"><span>확인할 포장 용량 (공식 포장단위)</span><select id="bottleVolumeSelect" class="select"></select></label>
+      <label class="field"><span>포장에 적힌 총 용량 직접 입력 (mL, 선택)</span><input id="bottleManualMl" class="num" type="number" min="0.1" max="10000" step="any" placeholder="포장에 적힌 용량"></label>
+      <p id="bottleVolumeResult" class="fraction-volume" aria-live="polite"></p>
+      <p class="tip danger">계산된 용량은 눈금이 있는 계량도구를 이용해 측정해주세요. 병 형상에 따라 눈대중 높이와 실제 용량은 다를 수 있습니다.</p>
+    </section>
+    <section id="liquidGuide" class="card flow-panel" hidden>
+      <h2 id="liquidName"></h2><p id="liquidCompany"></p><p id="liquidFlavor" hidden></p>
+      <p id="liquidPackagingSummary" class="cal-note" hidden></p>
+      <h3>어느 정도를 확인할까요?</h3><div id="fractions" class="flow-actions"><button type="button" data-fraction="0.5">1/2</button><button type="button" data-fraction="0.3333333333333333">1/3</button><button type="button" data-fraction="0.25">1/4</button><button type="button" data-fraction="0.6666666666666666">2/3</button><button type="button" data-fraction="0.75">3/4</button></div>
+      <p id="liquidImageStatus" role="status"></p><button id="liquidImageRetry" type="button" hidden>공식 이미지 다시 조회</button>
+      <div id="liquidPhotoStage" class="liquid-photo-stage" hidden>
+        <div id="liquidPhotoFrame" class="liquid-photo-frame">
+          <img id="liquidProductPhoto" alt="" hidden>
+          <svg id="liquidFallback" width="320" height="280" viewBox="0 0 320 280" role="img" aria-label="공식 포 이미지를 찾지 못한 제품의 참고용 도형" hidden><path d="M80 28 H240 L225 252 H95 Z" fill="#e2f3ec" stroke="#527d71" stroke-width="3"/></svg>
+          <div id="usableTopGuide" class="usable-guide" hidden></div>
+          <div id="usableBottomGuide" class="usable-guide" hidden></div>
+          <div id="photoFractionLine" class="photo-fraction-line" hidden><span id="photoFractionLabel">1/2</span></div>
+        </div>
+        <button type="button" id="liquidPhotoZoom" class="photo-zoom-btn" hidden>🔍 크게 보기</button>
+      </div>
+      <p id="liquidImageSource" class="cal-note"></p>
+      <p class="tip">포 상단을 뜯고 위에서부터 이 선까지를 대략적인 복용 기준으로 확인하세요.</p>
+      <details class="guide-options"><summary>직접 입력</summary><label class="field"><span>분율 직접 입력 (0.4 또는 40%)</span><input id="customFraction" class="num" inputmode="text" placeholder="예: 40%"></label><p id="fractionError" role="status"></p></details>
+      <details id="usableAdjustment" class="guide-options" hidden><summary>기준 영역 조정</summary>
+        <p class="tip">사진에서 자동으로 찾은 포장의 위·아래 밀봉(seal) 부분을 제외한 실제 액체 영역입니다. 사진과 다르면 직접 조정하세요.</p>
+        <label class="field"><span>위쪽 기준 <output id="usableTopValue">6%</output></span><input id="usableTop" type="range" min="0" max="49" value="6"></label>
+        <label class="field"><span>아래쪽 기준 <output id="usableBottomValue">94%</output></span><input id="usableBottom" type="range" min="51" max="100" value="94"></label>
+      </details>
+      <p id="fractionVolume" class="fraction-volume" aria-live="polite"></p>
+      <p class="tip danger">대략적인 분할 위치를 확인하기 위한 시각적 가이드입니다. 포장 형태에 따라 실제 내용물의 부피와 높이가 정확히 일치하지 않을 수 있습니다.<br>정확한 투여량이 필요하면 계량컵이나 경구용 주사기를 사용하세요.</p>
+      <details class="guide-options"><summary>포장 용량 확인·입력</summary><p id="liquidPackaging"></p>
+        <label class="field"><span>확인할 포장 용량 (공식 포장단위)</span><select id="liquidPackage" class="select"></select></label>
+        <label class="field"><span>포장에 적힌 총 용량 직접 입력 (mL, 선택)</span><input id="liquidManualMl" class="num" type="number" min="0.1" max="10000" step="any" placeholder="포장에 적힌 용량"></label>
+      </details>
+      <div id="liquidUploadOwnPrompt" hidden>
+        <p class="tip">공식 포장 사진을 찾지 못했습니다. 실제 제품 사진을 올리면 그 위에 분할선을 표시할 수 있습니다.</p>
+        <div class="flow-actions"><label class="file-button">사진 촬영<input id="liquidOwnCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="liquidOwnFile" type="file" accept="image/*"></label></div>
+      </div>
+    </section>
+    <section id="uploadGuide" class="card flow-panel" hidden>
+      <h2 id="uploadTitle">직접 업로드한 사진</h2>
+      <p id="uploadDbNote" class="tip" hidden>제품 정보는 확인되지 않았습니다. 업로드한 포장 사진을 기준으로 대략적인 분할 위치만 표시합니다.</p>
+      <button type="button" id="uploadRetake" class="link-btn">다른 사진 선택</button>
+      <div id="uploadCropAdjust" class="guide-options-block" hidden>
+        <h3>포/스틱 영역을 지정해주세요</h3>
+        <p class="tip">자동으로 영역을 찾지 못했습니다. 사진에서 박스나 배경을 제외하고 실제 포장 부분만 남도록 조정한 뒤 "이 영역 사용"을 눌러주세요.</p>
+        <div id="uploadRawStage" class="liquid-photo-stage">
+          <div id="uploadRawFrame" class="liquid-photo-frame liquid-photo-frame-raw">
+            <img id="uploadRawPhoto" alt="업로드한 원본 사진">
+            <div id="uploadCropBox" class="container-box"></div>
+          </div>
+        </div>
+        <label class="field"><span>위쪽 경계 <output id="uploadCropTopValue">10%</output></span><input id="uploadCropTop" type="range" min="0" max="94" value="10"></label>
+        <label class="field"><span>아래쪽 경계 <output id="uploadCropBottomValue">90%</output></span><input id="uploadCropBottom" type="range" min="6" max="100" value="90"></label>
+        <label class="field"><span>왼쪽 경계 <output id="uploadCropLeftValue">30%</output></span><input id="uploadCropLeft" type="range" min="0" max="94" value="30"></label>
+        <label class="field"><span>오른쪽 경계 <output id="uploadCropRightValue">70%</output></span><input id="uploadCropRight" type="range" min="6" max="100" value="70"></label>
+        <button type="button" id="confirmUploadCrop">이 영역 사용</button>
+      </div>
+      <div id="uploadResult" hidden>
+        <h3>어느 정도를 확인할까요?</h3>
+        <div id="uploadFractions" class="flow-actions"><button type="button" data-upload-fraction="0.5">1/2</button><button type="button" data-upload-fraction="0.3333333333333333">1/3</button><button type="button" data-upload-fraction="0.25">1/4</button><button type="button" data-upload-fraction="0.6666666666666666">2/3</button><button type="button" data-upload-fraction="0.75">3/4</button></div>
+        <p id="uploadResultStatus" role="status"></p>
+        <div id="uploadPhotoStage" class="liquid-photo-stage">
+          <div id="uploadPhotoFrame" class="liquid-photo-frame">
+            <img id="uploadPhoto" alt="">
+            <div id="uploadUsableTopGuide" class="usable-guide" hidden></div>
+            <div id="uploadUsableBottomGuide" class="usable-guide" hidden></div>
+            <div id="uploadFractionLine" class="photo-fraction-line"><span id="uploadFractionLabel">1/2</span></div>
+          </div>
+          <button type="button" id="uploadPhotoZoom" class="photo-zoom-btn">🔍 크게 보기</button>
+        </div>
+        <p class="tip">포 상단을 뜯고 위에서부터 이 선까지를 대략적인 복용 기준으로 확인하세요.</p>
+        <button type="button" id="uploadAdjustCropAgain" class="link-btn">영역 다시 지정</button>
+        <details id="uploadUsableAdjustment" class="guide-options">
+          <summary>분할 기준 영역 조정</summary>
+          <p class="tip">포장 상단·하단의 밀봉(seal) 부분은 실제 내용물이 없을 수 있습니다. 내용물이 시작되는 지점과 끝나는 지점을 지정하면 그 사이에서만 분할선을 계산합니다.</p>
+          <label class="field"><span>내용물 시작점(위) <output id="uploadUsableTopValue">6%</output></span><input id="uploadUsableTop" type="range" min="0" max="49" value="6"></label>
+          <label class="field"><span>내용물 끝점(아래) <output id="uploadUsableBottomValue">94%</output></span><input id="uploadUsableBottom" type="range" min="51" max="100" value="94"></label>
+        </details>
+        <p id="uploadFractionVolume" class="fraction-volume" aria-live="polite"></p>
+        <p class="tip danger">대략적인 분할 위치를 확인하기 위한 시각적 가이드입니다. 포장 형태에 따라 실제 내용물의 부피와 높이가 정확히 일치하지 않을 수 있습니다.<br>정확한 투여량이 필요하면 계량컵이나 경구용 주사기를 사용하세요.</p>
+      </div>
+    </section>
+    <details id="cameraAdvanced" class="card flow-panel"><summary>실물 용기에 맞춰보기</summary><p class="tip">고급 기능 · 직접 기준점을 맞추는 기존 카메라 보조 측정입니다.</p><div class="advanced-grid">
     <section class="card liquid-controls">
       <div class="back-row to-home"><button class="back-btn" type="button" data-mode="home">홈</button></div>
       <div class="eyebrow">실시간 용량 보조 측정</div><h2>컵의 기준을 먼저 맞추세요</h2><p class="lead">현재 MVP는 투명한 직선형·완만한 테이퍼형 컵에서 액면선을 직접 맞추는 방식입니다.</p>
@@ -456,7 +671,22 @@
       <div class="tip danger"><b>복약 안전 주의</b><br>정확한 투약에는 전용 계량컵이나 경구용 주사기를 사용하세요. 이 기능은 임시 참고용이며 소아·고위험약 용량 결정에는 사용하면 안 됩니다.</div>
     </section>
     <section class="card camera-card"><div class="camera-wrap" id="cameraWrap"><video id="camera" playsinline muted></video><div class="camera-placeholder"><b>카메라로 투명컵을 비춰보세요</b><span>영상은 기기 안에서만 표시되며 저장되지 않습니다.</span><span class="camera-permission-note">측정을 위해 카메라 권한이 필요합니다.</span><br><button id="startCamera">카메라 켜기</button><div class="camera-error" id="cameraError"></div></div><div class="cup-guide"><div class="level-line" id="levelLine"></div><div class="volume-badge"><strong id="volumeText">40 mL</strong><br><small>추정 용량</small></div></div></div></section>
+    </div></details>
   </div>
+
+  <section id="storageTool" class="flow" hidden>
+    <button type="button" class="back-btn" data-mode="home">홈</button>
+    <h2>내 약 보관함</h2>
+    <p class="lead" id="storageCount">저장한 약 0개</p>
+    <p id="storageEmpty" class="tip">아직 저장한 약이 없습니다. 검색 결과나 상세 화면에서 ♡ 저장을 눌러보세요.</p>
+    <div id="storageList" class="flow-list" hidden></div>
+    <button type="button" id="storageCompareBtn" disabled>선택한 약 크기 비교</button>
+    <section id="storageComparison" hidden>
+      <h2>크기 비교</h2>
+      <p class="tip">공식 치수 비율을 유지한 시각적 비교입니다. 같은 mm 비율의 위에서 본 단순 모형이며, 색상·각인·정확한 외형은 재현하지 않습니다.</p>
+      <div id="storageCompareList" class="flow-list"></div>
+    </section>
+  </section>
 
   <nav class="bottom-nav" aria-label="주요 메뉴">
     <button type="button" data-mode="home"><span class="nav-ic">🏠</span><span>홈</span></button>

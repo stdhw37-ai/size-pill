@@ -1,4 +1,6 @@
-import { enrichMedicines } from './mfds-enrichment.js';
+import { liquidImage } from './liquid-image.js';
+import { enrichMedicines, normalizePermit, lookup, SOURCES } from './mfds-enrichment.js';
+import { extractPrescriptionVision, ProviderNotConfiguredError, VisionProviderError, resolveProviderName } from './prescription-vision.js';
 const ENDPOINT = 'https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03';
 const TTL = 86400;
 const CACHE_VERSION = 3;
@@ -55,11 +57,62 @@ function database(env) {
   if (!secret.startsWith('sb_secret_')) headers.Authorization = `Bearer ${secret}`;
   return { url, headers };
 }
+// Vision extraction primary path (see public/prescription-extractor.js for the client-side fallback
+// orchestration - item 2/3/4 of the request). The image never touches Supabase or any log: it is read
+// once into memory here, handed to the provider over HTTPS, and both the buffer and the provider's
+// response go out of scope when this function returns - nothing about this request is persisted
+// anywhere (item 8). PRESCRIPTION_VISION_LIMITER is a separate, stricter budget from SEARCH_LIMITER
+// since each call can cost real money against a paid vision API, unlike a cached MFDS lookup.
+async function prescriptionExtract(request, env) {
+  if (request.method !== 'POST') return json({ error: 'POST 요청만 지원합니다.' }, 405);
+  if (env.PRESCRIPTION_VISION_LIMITER) {
+    const { success } = await env.PRESCRIPTION_VISION_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
+    if (!success) return json({ error: '분석 요청이 너무 잦습니다. 잠시 후 다시 시도해주세요.' }, 429);
+  }
+  // Whether a provider is actually configured is decided in ONE place - extractPrescriptionVision
+  // itself (it knows each provider's own key env var and the GOOGLE_VISION_API_KEY-implies-google
+  // default). A duplicate gate here previously required BOTH PRESCRIPTION_VISION_PROVIDER and
+  // PRESCRIPTION_VISION_API_KEY to be set, so setting only GOOGLE_VISION_API_KEY (this app's actual
+  // .dev.vars) always 501'd before the request ever reached that logic - this was the real cause of
+  // "vision route never called".
+  const hasGoogleVisionKey = !!env.GOOGLE_VISION_API_KEY;
+  let form;
+  try { form = await request.formData(); } catch { return json({ error: '이미지를 읽지 못했습니다.' }, 400); }
+  const image = form.get('image');
+  if (!(image instanceof File) && !(image instanceof Blob)) return json({ error: '이미지 파일이 필요합니다.' }, 400);
+  if (!image.type?.startsWith('image/')) return json({ error: '이미지 파일만 지원합니다.' }, 400);
+  if (image.size > 20 * 1024 * 1024) return json({ error: '20MB 이하의 이미지만 지원합니다.' }, 400);
+  try {
+    const buffer = await image.arrayBuffer();
+    const { provider, medications } = await extractPrescriptionVision(env, buffer, image.type, AbortSignal.timeout(30000));
+    // Dev-only structured diagnostic (item 9) - never the image, base64, or full OCR text; only the
+    // already-structured, already-validated fields.
+    console.log(JSON.stringify({
+      provider, googleVisionStatus: 200, hasGoogleVisionKey, medicationCount: medications.length,
+      structuredMedications: medications.map(m => ({ drugName: m.drugName, dosePerAdministration: m.dosePerAdministration, frequencyPerDay: m.frequencyPerDay, durationDays: m.durationDays }))
+    }));
+    return json({ schemaVersion: 1, source: 'vision', provider, medications });
+  } catch (error) {
+    if (error instanceof ProviderNotConfiguredError) {
+      console.log(JSON.stringify({ provider: null, googleVisionStatus: null, hasGoogleVisionKey, medicationCount: 0 }));
+      return json({ error: 'vision_not_configured', provider: null }, 501);
+    }
+    const provider = resolveProviderName(env) || null;
+    const status = error instanceof VisionProviderError ? error.status : null;
+    console.log(JSON.stringify({ provider, googleVisionStatus: status, hasGoogleVisionKey, medicationCount: 0, error: error?.message }));
+    // The provider's own message IS surfaced (item 5: "Google Vision 호출 실패: [status] [message]") -
+    // it's an API-level status/reason text, never the key, image, base64, or full OCR text.
+    return json({ error: '처방전 이미지를 분석하지 못했습니다.', provider, providerStatus: status, providerMessage: error instanceof VisionProviderError ? error.providerMessage : undefined }, 502);
+  }
+}
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
-    if (url.pathname !== '/api/medicines') return json({ error: '찾을 수 없는 주소입니다.' }, 404);
+    if (url.pathname === '/api/liquid-image') return liquidImage(request, env, imageUrl);
+    if (url.pathname === '/api/prescription/extract') return prescriptionExtract(request, env);
+    const liquid = url.pathname === '/api/liquids';
+    if (!liquid && url.pathname !== '/api/medicines') return json({ error: '찾을 수 없는 주소입니다.' }, 404);
     if (request.method !== 'GET') return json({ error: 'GET 요청만 지원합니다.' }, 405);
     const q = (url.searchParams.get('item_name') ?? url.searchParams.get('q') ?? '').trim().normalize('NFC');
     const company = (url.searchParams.get('entp_name') || '').trim().normalize('NFC');
@@ -73,7 +126,7 @@ export default {
       if (!success) return json({ error: '검색이 너무 잦습니다. 1분 뒤 다시 시도해주세요.' }, 429);
     }
     if (!env.MFDS_SERVICE_KEY) return json({ error: '의약품 검색 연결을 준비 중입니다. 잠시 후 다시 이용해주세요.' }, 503);
-    const key = await cacheKey([q, company, itemId, page, pageSize]);
+    const key = await cacheKey(liquid ? ['liquid-v1', q, company, itemId, page, pageSize] : [q, company, itemId, page, pageSize]);
     let db;
     try { db = database(env); } catch { /* Optional cache must not block searches. */ }
     if (db) {
@@ -90,7 +143,7 @@ export default {
     try {
       let serviceKey = env.MFDS_SERVICE_KEY.trim();
       if (serviceKey.includes('%')) serviceKey = decodeURIComponent(serviceKey);
-      const upstream = new URL(ENDPOINT);
+      const upstream = new URL(liquid ? SOURCES.permit.endpoint : ENDPOINT);
       upstream.search = new URLSearchParams({ serviceKey, type: 'json', pageNo: String(page), numOfRows: String(pageSize) });
       if (q) upstream.searchParams.set('item_name', q);
       if (company) upstream.searchParams.set('entp_name', company);
@@ -107,9 +160,16 @@ export default {
       if (!Array.isArray(items)) items = [items];
       if (items.some(item => !item?.ITEM_SEQ || !item?.ITEM_NAME)) throw new Error('schema');
       if (items.length > pageSize || (Number(body.totalCount) === 0 && items.length)) throw new Error('schema');
-      const merged = await enrichMedicines(items.map(normalize), serviceKey);
+      let merged;
+      if (liquid) {
+        merged = items.map(row => ({ ...normalize(row), permit: { status: 'ok', data: normalizePermit(row) }, easy: { status: 'not_requested', data: null } }));
+        // 복약정보(e약은요)는 품목일련번호 기반이라 낱알식별 미등재 액상 제형에도 그대로 동작한다. 이름 검색
+        // 결과(최대 20개)까지 매번 조회하면 느려지므로, 처방 용량 분석 등 특정 제품 1건을 확인할 때만(item_seq
+        // 지정 시) 가져온다 - 목록 조회 성능은 그대로 유지된다.
+        if (itemId && merged.length === 1) merged[0].easy = await lookup('easy', itemId, serviceKey, AbortSignal.timeout(6000));
+      } else merged = await enrichMedicines(items.map(normalize), serviceKey);
       const partial = merged.some(item => ['error', 'unmatched'].includes(item.permit.status) || ['error', 'unmatched'].includes(item.easy.status));
-      const payload = { schemaVersion: CACHE_VERSION, partial, items: merged, total: Number(body.totalCount), page, pageSize, fetchedAt: new Date().toISOString(), source: '식품의약품안전처 낱알식별·제품 허가정보·e약은요' };
+      const payload = { schemaVersion: CACHE_VERSION, partial, items: merged, total: Number(body.totalCount), page, pageSize, fetchedAt: new Date().toISOString(), source: liquid ? '식품의약품안전처 제품 허가정보' : '식품의약품안전처 낱알식별·제품 허가정보·e약은요' };
       if (db) {
         db.url.search = '?on_conflict=cache_key';
         ctx.waitUntil(fetch(db.url, { method: 'POST', headers: { ...db.headers, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: key, payload, expires_at: new Date(Date.now() + (partial ? 60 : TTL) * 1000).toISOString() }), signal: AbortSignal.timeout(2000) }).then(r => { if (!r.ok) console.warn('Search cache write unavailable'); }).catch(() => {}));

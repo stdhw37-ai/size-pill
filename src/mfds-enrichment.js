@@ -24,7 +24,7 @@ export function normalizeEasy(row) {
     storage: text(row.depositMethodQesitm), published: text(row.openDe), updated: text(row.updateDe)
   };
 }
-async function lookup(kind, id, serviceKey, signal) {
+export async function lookup(kind, id, serviceKey, signal) {
   const source = SOURCES[kind];
   try {
     if (signal.aborted) throw new Error('deadline');

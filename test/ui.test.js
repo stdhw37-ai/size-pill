@@ -17,7 +17,7 @@ function setup(t, fetcher = async () => Response.json(payload())) {
   t.after(() => window.happyDOM.close());
   window.document.write(html.replace('<script src="/app.js" defer></script>', ''));
   window.fetch = fetcher;
-  window.eval(script);
+  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, getGroups() { return rxGroups; } };');
   const $ = selector => window.document.querySelector(selector);
   const input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input')); };
   const submit = async () => { $('#searchForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle(); };
@@ -385,4 +385,398 @@ test('3D 씬은 렌더러 로딩 여부와 무관하게 검색·선택·화면 �
   assert.ok($('#sizeSummary').textContent.includes('12 × 10 × 4 mm'));
   $('#toggleCal').click(); input('#calRange', '110'); $('#saveCal').click();
   assert.ok($('#sizeSummary').textContent.includes('12 × 10 × 4 mm'));
+});
+
+test('처방전은 textarea 없이 항목별 단일 후보를 확정하고 검색으로 추가·수정·삭제한다', async t => {
+  const a = { ...complete, name: '텔미암정40/10mg' }, b = { ...complete, id: '124', name: '텔미암정40/5mg', long: 18 };
+  const { $, window, input, submit } = setup(t, async () => Response.json(payload([b, a])));
+  $('[data-mode="prescription"]').click(); assert.equal($('#prescriptionTool textarea'), null);
+  await window.eval("processRxNames(['텔미암 40/1O'])");
+  assert.equal($('#rxCandidates input').type, 'radio'); assert.equal($('#rxCandidates input').checked, false); assert.equal($('#rxCompare').disabled, true);
+  const checks = [...window.document.querySelectorAll('#rxCandidates input')];
+  checks[0].checked = true; checks[0].dispatchEvent(new window.Event('change')); $('#rxCandidates .flow-actions button').click();
+  assert.equal($('#rxSelectedList').children.length, 1); assert.ok($('#rxSelectedList').textContent.includes(a.name));
+  $('#rxAdd').click(); assert.equal($('#rxSearchContext').hidden, false); input('#query', '텔미암'); await submit(); $('#results button').click();
+  assert.equal($('#prescriptionTool').hidden, false); assert.equal($('#rxSelectedList').children.length, 2);
+  $('#rxCompare').click(); assert.equal($('#rxCompareList').children.length, 2);
+  $('#rxSelectedList button').click(); assert.equal($('#resultName').textContent, a.name); assert.equal($('#pillTool').dataset.step, 'result');
+  $('[data-mode="prescription"]').click(); $('#rxSelectedList .flow-actions button:last-child').click(); assert.equal($('#rxSelectedList').children.length, 1);
+  $('#rxCandidates .flow-actions button:last-child').click(); input('#query', '텔미암'); await submit(); $('#results button').click();
+  assert.equal($('#rxSelectedList').children.length, 1, '같은 공식 품목은 중복 저장하지 않는다');
+  $('#rxClear').click(); assert.equal($('#rxCandidates').children.length, 0); assert.equal($('#rxSelectedList').children.length, 0);
+});
+
+test('일반 검색에서도 시럽 등 액체약은 알약 3D 화면이 아니라 액체 화면으로 이동한다', async t => {
+  // Regression for item 1/2 of the request: #searchForm only queries /api/medicines (the pill
+  // dataset), but a name search there can still surface a liquid product by name match - this must
+  // route the same way the prescription flow already does (isOralLiquidCandidate), never assume
+  // 'pill' just because the result came from the pill-search box.
+  const liquid = { ...complete, name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
+  const { $, input, submit } = setup(t, async () => Response.json(payload([liquid], 1, 1)));
+  input('#query', '듀파락'); await submit();
+  $('#results button').click();
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  assert.equal($('#pillTool').classList.contains('hidden'), true);
+  assert.equal($('#liquidName').textContent, '듀파락-이지시럽');
+});
+
+test('처방약 비교 화면에서도 액체약 카드는 알약 3D가 아니라 액체 화면으로 이동한다', async t => {
+  // Regression for item 1/2/9: #rxCompare built every card's onclick around selectMedicine()
+  // unconditionally, so a liquid item chosen in the prescription flow still opened the pill 3D view
+  // once it reached the compare list, even though its own selection correctly recorded kind:'liquid'.
+  const pill = { ...complete, name: '텔미암정40/10mg' };
+  const liquidItem = { ...complete, id: '999', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
+  const { $, window } = setup(t, async path => {
+    const term = new URL(path, 'http://x').searchParams.get('item_name') || '';
+    return Response.json(payload(term.includes('듀파락') ? [liquidItem] : [pill], 1, 1));
+  });
+  await window.eval("processRxNames(['텔미암정40/10mg'])");
+  window.document.querySelector('#rxCandidates input').checked = true;
+  window.document.querySelector('#rxCandidates input').dispatchEvent(new window.Event('change'));
+  window.document.querySelector('#rxCandidates .flow-actions button').click();
+  await window.eval("processRxNames(['듀파락-이지시럽'])");
+  const groups = window.document.querySelectorAll('.rx-group');
+  const secondRadio = groups[groups.length - 1].querySelector('input');
+  secondRadio.checked = true; secondRadio.dispatchEvent(new window.Event('change'));
+  groups[groups.length - 1].querySelector('.flow-actions button').click();
+  assert.equal(window.__rxTest.getGroups().at(-1).chosen.kind, 'liquid');
+  $('#rxCompare').click();
+  assert.equal($('#rxCompareList').children.length, 2);
+  [...$('#rxCompareList').children].find(b => b.textContent.includes('듀파락')).click();
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  assert.equal($('#pillTool').classList.contains('hidden'), true);
+});
+
+test('OCR 후보 추출은 개인정보를 제외하고 약명·함량만 남긴다', t => {
+  const { window } = setup(t);
+  assert.deepEqual(Array.from(window.eval("extractRxNames('홍길동 900101-1234567\\n서울병원\\n텔미암정 40/10mg 1 2 30\\n아모잘탄정5/50mg')")), ['텔미암정 40/10mg', '아모잘탄정5/50mg']);
+  assert.deepEqual(Array.from(window.eval("extractRxNames('텔 미 암 정 40/10mg')")), ['텔미암정 40/10mg']);
+});
+
+test('액체약 공식 포장 용량·분율·맛/향을 표시하고 미제공 정보를 추측하지 않는다', async t => {
+  // Packaging text names only pouch units (no "병") so classifyContainerType() resolves to 'pouch'
+  // unambiguously - this test is about volume/fraction/flavor display, not type classification
+  // (see the dedicated container-type tests below).
+  const liquid = { ...complete, name: '시험시럽', description: '딸기향의 시럽제', permit: { status: 'ok', data: { packaging: '20mL × 30포, 5mL × 10포' } } };
+  const paths = [];
+  const { $, input, window } = setup(t, async path => { paths.push(path); return Response.json(payload([liquid])); });
+  $('[data-mode="liquid"]').click(); input('#liquidQuery', '시험시럽');
+  $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  assert.ok(paths[0].startsWith('/api/liquids?')); $('#liquidResults button').click();
+  assert.equal($('#liquidGuide').hidden, false); assert.equal($('#bottleNotice').hidden, true); assert.equal($('#containerTypeChoice').hidden, true);
+  assert.ok($('#liquidFlavor').textContent.includes('딸기향'));
+  assert.equal($('#liquidPackage').options.length, 3); assert.equal($('#liquidPackage').value, '');
+  input('#liquidPackage', '20'); $('[data-fraction="0.3333333333333333"]').click();
+  assert.ok($('#fractionVolume').textContent.includes('6.7 mL'));
+  input('#customFraction', '40%'); assert.ok($('#fractionVolume').textContent.includes('8 mL'));
+  input('#customFraction', '200%'); assert.ok($('#fractionError').textContent.includes('입력')); assert.ok($('#fractionVolume').textContent.includes('8 mL'));
+  input('#liquidManualMl', '-5'); assert.ok(!$('#fractionVolume').textContent.includes('mL'));
+  assert.ok($('#liquidGuide').textContent.includes('대략적인 분할 위치를 확인하기 위한 시각적 가이드'));
+  assert.equal($('#cameraAdvanced').open, false);
+});
+
+test('액체약 새 검색 결과가 늦게 끝난 이전 요청으로 바뀌지 않는다', async t => {
+  let oldResolve;
+  const { $, window, input } = setup(t, path => path.includes(encodeURIComponent('이전시럽')) ? new Promise(resolve => { oldResolve = resolve; }) : Promise.resolve(Response.json(payload([{ ...complete, name: '다음시럽' }]))));
+  input('#liquidQuery', '이전시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  input('#liquidQuery', '다음시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  oldResolve(Response.json(payload([{ ...complete, name: '이전시럽' }]))); await settle();
+  assert.ok($('#liquidResults').textContent.includes('다음시럽')); assert.ok(!$('#liquidResults').textContent.includes('이전시럽'));
+});
+
+// A 1x1 PNG, valid enough for happy-dom's lightweight decoder to fire a real 'load' with a
+// naturalWidth/Height - unlike a real browser, no canvas adapter is configured here (see
+// BrowserSettingsFactory's canvasAdapter default), so canvas.getContext('2d') returns null and
+// neither automatic detection nor a saved override rect can ever produce cropped pixels. That
+// exercises exactly the "official photo exists, but no crop could be made" case: production code
+// must show the real photo as-is here, never a generic schematic - the schematic is reserved for
+// data.status === 'not_found' (no official photo at all).
+const onePixelPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+test('공식 사진은 있지만 crop을 만들 수 없을 때 원본을 그대로 보여주고, "이미지 없음"과는 구분한다', async t => {
+  const { $, window } = setup(t);
+  window.fetch = async () => Response.json({ status: 'ok', id: '9', imageData: onePixelPng, source: '시험 출처' });
+  // Goes through applyContainerType('pouch', ...) rather than calling loadLiquidPhoto directly, so
+  // currentContainerType is set the same way selectLiquid() would set it in production - the guard
+  // in loadLiquidPhoto()/renderPhotoOverlay() that blocks anything but 'pouch' (see the bottle tests
+  // below) would otherwise silently no-op this call.
+  await window.eval("applyContainerType('pouch', {id:'9',name:'시험시럽'})"); await settle();
+  // Crop (auto+override) failed, but a real photo exists: show it as-is, not the generic schematic.
+  assert.equal($('#liquidProductPhoto').hidden, false); assert.equal($('#liquidFallback').hidden, true);
+  assert.equal($('#liquidProductPhoto').src, onePixelPng);
+  assert.ok($('#liquidImageStatus').textContent.includes('전체를 표시합니다'));
+  assert.equal($('#usableAdjustment').hidden, false);
+  $('[data-fraction="0.3333333333333333"]').click();
+  assert.equal($('#photoFractionLine').hidden, false);
+  // Top-based: torn open at the top and drunk downward, so 1/3 sits 1/3 of the way DOWN FROM THE TOP.
+  assert.equal($('#photoFractionLine').style.top, (6 + (94 - 6) * (1 / 3)) + '%');
+  // A saved override rect degrades the same way when canvas still isn't available to draw it -
+  // still the real photo, never the schematic.
+  window.fetch = async () => Response.json({ status: 'ok', id: '200502778', imageData: onePixelPng, source: '시험 출처' });
+  await window.eval("applyContainerType('pouch', {id:'200502778',name:'백초시럽플러스'})"); await settle();
+  assert.equal($('#liquidProductPhoto').hidden, false); assert.equal($('#liquidFallback').hidden, true);
+  window.fetch = async () => Response.json({ status: 'not_found', id: '10' });
+  await window.eval("applyContainerType('pouch', {id:'10',name:'사진없는시럽'})"); await settle();
+  assert.equal($('#liquidFallback').hidden, false); assert.ok($('#liquidImageStatus').textContent.includes('공식 포장 사진이 없어'));
+  // No official photo at all: offer the user's own photo as an alternative way into the fraction guide.
+  assert.equal($('#liquidUploadOwnPrompt').hidden, false);
+  window.fetch = async () => Response.json({ error: '다시 시도해주세요' }, { status: 502 });
+  await window.eval("applyContainerType('pouch', {id:'11',name:'연결오류시럽'})"); await settle();
+  assert.equal($('#liquidFallback').hidden, true); assert.equal($('#liquidImageRetry').hidden, false);
+});
+
+test('classifyContainerType은 공식 포장단위 문구로 포/병/판단불가를 구분한다', t => {
+  const { window } = setup(t);
+  assert.equal(window.eval("classifyContainerType('20mL × 30포')"), 'pouch');
+  assert.equal(window.eval("classifyContainerType('5mL/스틱 x 10')"), 'pouch');
+  assert.equal(window.eval("classifyContainerType('500mL/병')"), 'bottle');
+  assert.equal(window.eval("classifyContainerType('100mL/보틀')"), 'bottle');
+  assert.equal(window.eval("classifyContainerType('20mL × 30포, 100mL/병')"), 'unknown', '포와 병이 모두 있으면 자동 판정하지 않는다');
+  assert.equal(window.eval("classifyContainerType('')"), 'unknown');
+  assert.equal(window.eval("classifyContainerType(undefined)"), 'unknown');
+});
+
+test('resolveContainerType은 포장단위 문구 다음으로 호일/스틱 포장 문구, 그다음 저장된 override 순으로 확인한다', t => {
+  const { window } = setup(t);
+  assert.equal(window.eval("resolveContainerType({id:'1', permit:{data:{packaging:'20mL × 30포'}}})"), 'pouch', '포장단위 문구만으로 이미 확정되면 그대로 사용');
+  assert.equal(window.eval("resolveContainerType({id:'2', permit:{data:{packaging:'', description:'알루미늄 호일로 포장된 스틱형 제제'}}})"), 'pouch', '포장단위가 비어 있어도 허가정보 문구에 호일/스틱 포장이 명시되면 포로 판정');
+  assert.equal(window.eval("resolveContainerType({id:'3', permit:{data:{packaging:'500mL/병', description:'알루미늄 호일 포장'}}})"), 'bottle', '병 문구가 명시되면 호일 언급이 있어도 포로 뒤집지 않는다');
+  // 코푸시럽에스(196900058): 실제로는 포장단위 문구만으로 이미 'pouch'로 확정되지만, override도 그 자체로
+  // 신뢰할 수 있는 결과를 내도록 보장한다 - 사용자가 매번 포장 형태를 선택하지 않아도 된다.
+  assert.equal(window.eval("resolveContainerType({id:'196900058', permit:{data:{packaging:''}}})"), 'pouch', '패키징 문구가 비어 있어도 저장된 override로 확정');
+  assert.equal(window.eval("resolveContainerType({id:'999999', permit:{data:{packaging:''}}})"), 'unknown', 'override도 문구도 없으면 여전히 판단불가');
+});
+
+test('병 형태 제품은 분할선 기능을 제공하지 않고 계량도구를 안내하며, 계산은 사진 없이 숫자로만 제공한다', async t => {
+  const bottle = { ...complete, name: '코미시럽', company: '코오롱제약(주)', description: '단맛, 딸기향의 시럽제', permit: { status: 'ok', data: { packaging: '500mL/병' } } };
+  const { $, input, window } = setup(t, async () => Response.json(payload([bottle])));
+  input('#liquidQuery', '코미시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  $('#liquidResults button').click();
+  assert.equal($('#bottleNotice').hidden, false); assert.equal($('#liquidGuide').hidden, true); assert.equal($('#containerTypeChoice').hidden, true);
+  // Product header (name/company/flavor/packaging) shows on the bottle screen too, just without
+  // any fraction-line machinery - #bottleNotice has no photoFractionLine element at all.
+  assert.equal($('#bottleProductName').textContent, '코미시럽'); assert.equal($('#bottleProductCompany').textContent, '코오롱제약(주)');
+  assert.equal($('#bottleProductPackaging').textContent, '포장 단위: 500mL/병');
+  assert.equal($('#bottleNotice').querySelector('#photoFractionLine, [data-fraction]'), null);
+  assert.ok($('#bottleNotice').textContent.includes('⚠ 병 제품은 분할선으로 용량을 확인할 수 없어요'));
+  assert.ok($('#bottleNotice').textContent.includes('계량컵'));
+  $('#bottleCalcBtn').click();
+  assert.equal($('#bottleCalculator').hidden, false); assert.equal($('#bottleNotice').hidden, true);
+  // No image anywhere in the bottle calculator - a fraction line can never be drawn on a bottle photo.
+  assert.equal($('#bottleCalculator').querySelector('img'), null);
+  input('#bottleVolumeSelect', '500'); $('[data-bottle-fraction="0.3333333333333333"]').click();
+  // [총 용량] × [분율] = [계산된 용량] order, "약" only on a result that actually got rounded.
+  assert.equal($('#bottleVolumeResult').textContent, '500 mL × 1/3 = 약 166.7 mL');
+  $('[data-bottle-fraction="0.5"]').click();
+  assert.equal($('#bottleVolumeResult').textContent, '500 mL × 1/2 = 250 mL');
+  assert.ok($('#bottleCalculator').textContent.includes('눈금이 있는 계량도구를 이용해 측정'));
+});
+
+test('포 제품에서 병 제품으로 바로 전환해도(새 검색 없이) 분율선이 남아있지 않는다', async t => {
+  const { $, window } = setup(t);
+  window.eval(`
+    window.__pouch = { id: '196900058', name: '코푸시럽에스', permit: { data: { packaging: '20mL × 6포' } } };
+    window.__bottle = { id: '199800766', name: '코미시럽', permit: { data: { packaging: '500mL/병' } } };
+  `);
+  // Force the pouch branch into its "photo shown" state without depending on canvas (see the
+  // "공식 사진은 있지만 crop을..." test above for why this harness can't exercise the real image
+  // pipeline) - directly drive applyPouchCrop's success path via loadLiquidPhoto isn't needed here;
+  // selectLiquid() already reaches applyContainerType('pouch', ...) and shows #liquidGuide/#fractions.
+  window.eval("selectLiquid(window.__pouch)"); await settle();
+  assert.equal($('#liquidGuide').hidden, false);
+  window.eval("selectLiquid(window.__bottle)"); await settle();
+  assert.equal($('#liquidGuide').hidden, true); assert.equal($('#bottleNotice').hidden, false);
+  assert.equal($('#photoFractionLine').hidden, true);
+});
+
+test('포장 형태를 자동 판정하지 못하면 사용자에게 선택하게 하고, "잘 모르겠어요"는 안전하게 계량도구 안내로 보낸다', async t => {
+  const unknown = { ...complete, name: '애매한시럽', permit: { status: 'ok', data: { packaging: '' } } };
+  const { $, input, window } = setup(t, async () => Response.json(payload([unknown])));
+  input('#liquidQuery', '애매한시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  $('#liquidResults button').click();
+  assert.equal($('#containerTypeChoice').hidden, false); assert.equal($('#liquidGuide').hidden, true); assert.equal($('#bottleNotice').hidden, true);
+  $('#containerTypeUnsure').click();
+  assert.equal($('#bottleNotice').hidden, false); assert.equal($('#containerTypeChoice').hidden, true);
+  $('#bottleIsActuallyPouch').click();
+  assert.equal($('#liquidGuide').hidden, false); assert.equal($('#bottleNotice').hidden, true);
+});
+
+test('건강기능식품처럼 제품 DB에 없는 사진도 업로드해서 분율 가이드를 사용할 수 있다', async t => {
+  const { $, window } = setup(t);
+  $('#liquidWayUpload').click();
+  assert.equal($('#liquidUploadWay').hidden, false); assert.equal($('#liquidSearchWay').hidden, true);
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const bin = Buffer.from(png, 'base64');
+  await window.eval(`
+    const bytes = new Uint8Array([${bin.join(',')}]);
+    const file = new File([bytes], 'photo.png', { type: 'image/png' });
+    const input = document.querySelector('#uploadFile');
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new Event('change'));
+  `);
+  await settle();
+  assert.equal($('#uploadGuide').hidden, false);
+  // Standalone upload entry point has no product-DB match, so the "확인되지 않았습니다" note must show.
+  assert.equal($('#uploadDbNote').hidden, false);
+  // No canvas in this harness (see the earlier crop test) - automatic detection cannot run, so the
+  // manual region picker must appear instead of silently failing.
+  assert.equal($('#uploadCropAdjust').hidden, false);
+  assert.equal($('#uploadCropTop').value, '10'); assert.equal($('#uploadCropBottom').value, '90');
+  $('#uploadCropLeft').value = '25'; $('#uploadCropLeft').dispatchEvent(new window.Event('input'));
+  assert.equal($('#uploadCropBox').style.left, '25%');
+});
+
+test('isOralLiquidCandidate는 이름 끝의 "액"만으로는 놓치던 알긴산나트륨류(예: 알지에스액)를 포함하고, 비경구 액상은 계속 제외한다', t => {
+  const { window } = setup(t);
+  const asItem = (name, description = '') => `{ id: '1', name: ${JSON.stringify(name)}, description: ${JSON.stringify(description)} }`;
+  // 실제 API 응답에서 확인한 사례: 이름이 "시럽|현탁액|내복액|내용액|경구용액|경구액" 중 어느 것도 포함하지
+  // 않아 기존 정규식이 놓쳤지만, CHART(성상)는 "...점성이 있는 액제"였다.
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('알지에스액(알긴산나트륨)', '알루미늄 호일 파우치에 들어있는 연한 갈색의 점성이 있는 액제')})`), true);
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('알지셀액(알긴산나트륨)', '연갈색의 점성이 있는 액제')})`), true);
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('코미시럽')})`), true, '기존 방식(이름에 "시럽")도 계속 통과해야 한다');
+  // 실제 API에서 확인한, 이름에 "액"이 있지만 경구용이 아닌 사례들 - CHART에 "액제/현탁액"이 나와도 제외되어야 한다.
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('지노클렌질세정액', '황갈색의 액제.')})`), false, '세정액(상처 세정용)은 제외');
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('아사콜관장액4그람/100밀리리터(메살라진)', '갈색현탁액')})`), false, '관장액은 제외');
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('벤토린흡입액(살부타몰황산염)', '무색~연한 노란색의 투명한 액제')})`), false, '흡입액은 제외');
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('나리스타에스점비액')})`), false, '점비액은 제외');
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('알레크롬점안액(크로모글리크산나트륨)')})`), false, '점안액은 기존대로 제외');
+  assert.equal(window.eval(`isOralLiquidCandidate(${asItem('케어가글액(박하향)')})`), false, '가글액은 기존대로 제외');
+});
+
+test('포장 형태를 자동 확인하지 못해도 "검색 결과 없음"이 아니라 제품명·제조사·제형·포장단위를 먼저 보여준다', async t => {
+  const ambiguous = { ...complete, name: '애매한시럽', company: '애매제약', description: '무색투명한 액', permit: { status: 'ok', data: { packaging: '' } } };
+  const { $, input, window } = setup(t, async () => Response.json(payload([ambiguous])));
+  input('#liquidQuery', '애매한시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  $('#liquidResults button').click();
+  assert.equal($('#containerTypeChoice').hidden, false);
+  assert.equal($('#containerTypeProductName').textContent, '애매한시럽');
+  assert.equal($('#containerTypeProductCompany').textContent, '애매제약');
+  assert.ok($('#containerTypeChoice').textContent.includes('포장 형태를 자동으로 확인하지 못했습니다'));
+});
+
+test('내 약 보관함: 검색 결과에서 저장·해제하고 localStorage에 itemSeq 기반 구조로 남긴다', async t => {
+  const { $, submit, input, window } = setup(t);
+  input('#query', '시험약'); await submit();
+  const heart = $('#results .save-heart');
+  assert.equal(heart.textContent, '♡ 저장'); assert.equal(heart.getAttribute('aria-pressed'), 'false');
+  heart.click();
+  assert.equal(heart.textContent, '♥ 저장됨'); assert.equal(heart.getAttribute('aria-pressed'), 'true');
+  // 검색 결과 카드를 클릭한 것으로 취급되어 제품이 선택되면 안 된다 (하트는 별도 동작).
+  assert.equal($('#resultName').textContent, '직접 입력 예시');
+  const saved = JSON.parse(window.localStorage.getItem('savedMedicinesV1'));
+  assert.equal(saved.length, 1);
+  assert.deepEqual(Object.keys(saved[0]).sort(), ['color', 'dosageForm', 'entpName', 'imageUrl', 'itemName', 'itemSeq', 'kind', 'length', 'savedAt', 'shape', 'thickness', 'width'].sort());
+  assert.equal(saved[0].itemSeq, '123'); assert.equal(saved[0].itemName, complete.name); assert.equal(saved[0].length, 12); assert.equal(saved[0].width, 10); assert.equal(saved[0].kind, 'pill');
+  // 홈의 "최근 확인한 약"과는 완전히 다른 키에 저장된다 - 제품을 선택한 적이 없으니 최근 목록은 비어 있다.
+  assert.equal(JSON.parse(window.localStorage.getItem('recentMedicines') || '[]').length, 0);
+  heart.click();
+  assert.equal(heart.textContent, '♡ 저장'); assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1')).length, 0);
+});
+
+test('내 약 보관함 화면: 목록·삭제·2개 이상 선택 시 비교 버튼 활성화', async t => {
+  const { $, window } = setup(t);
+  window.eval(`
+    saveMedicine({ id:'1', name:'텔미암정40/10mg', company:'한화제약', long:12.32, short:6.79, thick:4.14, shape:'타원형', form:'필름코팅정' }, 'pill');
+    saveMedicine({ id:'2', name:'탁센400', company:'하나제약', long:16.7, short:9.9, thick:6.1, shape:'장방형', form:'필름코팅정' }, 'pill');
+  `);
+  $('[data-mode="storage"]').click();
+  assert.equal($('#storageTool').hidden, false);
+  assert.equal($('#storageCount').textContent, '저장한 약 2개');
+  assert.equal($('#storageList').children.length, 2);
+  assert.equal($('#storageCompareBtn').disabled, true);
+  const checks = [...window.document.querySelectorAll('.storage-check')];
+  checks[0].checked = true; checks[0].dispatchEvent(new window.Event('change'));
+  assert.equal($('#storageCompareBtn').disabled, true, '1개만 선택하면 아직 비활성');
+  checks[1].checked = true; checks[1].dispatchEvent(new window.Event('change'));
+  assert.equal($('#storageCompareBtn').disabled, false);
+  $('#storageCompareBtn').click();
+  assert.equal($('#storageComparison').hidden, false);
+  assert.equal($('#storageCompareList').children.length, 2);
+  // 삭제는 즉시 목록과 저장소 모두에서 사라진다.
+  $('#storageList .storage-card button:last-child').click();
+  assert.equal($('#storageList').children.length, 1);
+  assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1')).length, 1);
+});
+
+test('처방전에서 확정한 약은 자동으로 저장되지 않고, [♡ 저장] 버튼을 눌러야만 내 약 보관함에 들어간다', async t => {
+  const a = { ...complete, name: '텔미암정40/10mg' };
+  const { $, window, input, submit } = setup(t, async () => Response.json(payload([a])));
+  await window.eval("processRxNames(['텔미암 40/10'])");
+  const radio = $('#rxCandidates input'); radio.checked = true; radio.dispatchEvent(new window.Event('change'));
+  $('#rxCandidates .flow-actions button').click();
+  assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1') || '[]').length, 0, '확정만으로는 저장되지 않는다');
+  const heart = $('#rxSelectedList .save-heart'); assert.ok(heart); heart.click();
+  const saved = JSON.parse(window.localStorage.getItem('savedMedicinesV1'));
+  assert.equal(saved.length, 1); assert.equal(saved[0].itemSeq, '123');
+});
+
+// dose-calc.js는 pouch-crop.js와 같은 동적 import 패턴이라 이 테스트 하네스(disableJavaScriptFileLoading)
+// 에서는 항상 null이다 - 실제 계산/파싱 정확성은 test/dose-calc.test.js가 순수 함수로 직접 검증하고,
+// 여기서는 모듈이 없을 때도 절대 죽지 않고 "추가 정보가 필요합니다" 쪽으로 안전하게 빠지는지만 확인한다.
+// 실제 브라우저(동적 import 동작)에서의 범위 계산·bar 렌더링은 실행 후 스크린샷으로 별도 확인했다.
+test('처방 용량 분석: 처방전에서 용량을 읽지 못하면 간략 표시에 "읽지 못함"을 보여주고, 계산 모듈이 없을 때도 안전하게 안내만 한다', async t => {
+  const a = { ...complete, name: '텔미암정40/10mg' };
+  const { $, window } = setup(t, async () => Response.json(payload([a])));
+  await window.eval("processRxNames(['텔미암정40/10mg'])"); // rawText를 주지 않아 ocrDose가 없는 상태를 재현
+  await settle();
+  const radio = $('#rxCandidates input'); radio.checked = true; radio.dispatchEvent(new window.Event('change'));
+  $('#rxCandidates .flow-actions button').click();
+  assert.ok($('#rxSelectedList .rx-dose-summary').textContent.includes('처방전에서 읽지 못함'));
+  $('#rxSelectedList .flow-actions button:nth-child(2)').click(); // "용량 분석 보기"
+  await settle();
+  const panel = $('.rx-dose-detail');
+  assert.equal(panel.hidden, false);
+  assert.ok(panel.textContent.includes('추가 정보가 필요합니다'));
+  assert.ok(!/적정|부적정(?!\S*안|경우)|과량|안전한 처방|잘못된 처방/.test(panel.textContent), '단정적 표현이 없어야 한다');
+});
+
+test('추출 결과(unified schema)를 먼저 표시하고 인식 수정은 원문을 보존하며 후보를 다시 검색한다', async t => {
+  const schema = await import('../public/prescription-schema.js');
+  const paths = [];
+  const { window, $ } = setup(t, async path => { paths.push(path); return Response.json(payload([])); });
+  window.__rxTest.setMedSchema(schema);
+  window.testRow = schema.clampMedication({
+    productCode: '644913501', rawName: '듀파락-이지시럽/15mL/포', drugName: '듀파락-이지시럽',
+    strengthOrPackage: '15mL/포', doseUnit: '포', dosePerAdministration: 1, frequencyPerDay: 3, durationDays: 10,
+    confidence: { productCode: .5, drugName: .5, dose: .95, frequency: .95, duration: .95 } // 낮은 confidence -> needsReview
+  });
+  await window.eval('processRxNames([window.testRow])');
+  assert.ok($('#rxCandidates').textContent.includes('1포 × 하루 3회 × 10일'));
+  assert.ok($('#rxCandidates').textContent.includes('⚠ 인식 결과를 확인해주세요'));
+  $('#rxCandidates button').click();
+  $('[name="drugName"]').value = '수정시럽'; $('[name="frequencyPerDay"]').value = '2';
+  $('.rx-recognition-editor').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle();
+  assert.ok($('#rxCandidates').textContent.includes('1포 × 하루 2회 × 10일'));
+  assert.equal(window.__rxTest.getGroups()[0].row.rawName, '듀파락-이지시럽/15mL/포');
+  assert.ok(paths.some(path => decodeURIComponent(path).includes('수정시럽')));
+  assert.equal(window.__rxTest.getGroups()[0].chosen, null);
+});
+
+test('productCode 기반 MFDS 교차검증: 보험코드가 일치하는 후보를 강한 매치로 우선 표시하되 자동 확정하지 않는다', async t => {
+  // 공식 API는 item_name/entp_name/item_seq로만 검색 가능하고 보험코드(EDI_CODE) 자체를 검색 조건으로
+  // 받지 않는다(docs/mfds-api.md) - 그래서 검색은 여전히 이름 기준이고, 각 결과 후보 자신의
+  // insuranceCode를 처방전에서 읽은 productCode와 사후 비교해 강한 매치만 표시한다 (item 5).
+  const schema = await import('../public/prescription-schema.js');
+  const matching = normalize({ ITEM_SEQ: '900', ITEM_NAME: '가나다정', ENTP_NAME: '가나다제약', EDI_CODE: '644913501' });
+  const other = normalize({ ITEM_SEQ: '901', ITEM_NAME: '가나다정 (구법)', ENTP_NAME: '가나다제약', EDI_CODE: '999999999' });
+  const { window, $ } = setup(t, async () => Response.json(payload([other, matching], 1, 2)));
+  window.__rxTest.setMedSchema(schema);
+  window.testRow = schema.clampMedication({ productCode: '644913501', drugName: '가나다정', dosePerAdministration: 1, frequencyPerDay: 1, durationDays: 5, confidence: { productCode: .9, drugName: .9, dose: .9, frequency: .9, duration: .9 } });
+  await window.eval('processRxNames([window.testRow])');
+  const labels = $('#rxCandidates').querySelectorAll('.rx-choice');
+  assert.equal(labels.length, 2);
+  assert.ok(labels[0].textContent.includes('✓ 코드 일치'), '보험코드가 일치하는 후보가 먼저 온다');
+  assert.ok(!labels[1].textContent.includes('✓ 코드 일치'));
+  assert.equal($('#rxCandidates input:checked'), null, '자동으로 선택/확정되지는 않는다');
+  assert.equal(window.__rxTest.getGroups()[0].chosen, null);
+});
+
+test('처방전 시럽은 알약 검색 장애에도 액체 후보를 선택하고 liquid 화면으로 이동한다', async t => {
+  const liquid = { ...complete, name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
+  const { window, $ } = setup(t, async path => path.startsWith('/api/medicines?') ? Response.json({ error: '실패' }, { status: 503 }) : Response.json(payload([liquid])));
+  await window.eval("processRxNames(['듀파락-이지시럽'])");
+  const radio = $('#rxCandidates input'); assert.ok(radio);
+  radio.checked = true; radio.dispatchEvent(new window.Event('change')); $('#rxCandidates .flow-actions button').click();
+  assert.equal(window.__rxTest.getGroups()[0].chosen.kind, 'liquid');
+  $('#rxSelectedList .flow-actions button').click();
+  assert.equal($('#liquidTool').classList.contains('active'), true); assert.equal($('#pillTool').classList.contains('hidden'), true);
 });

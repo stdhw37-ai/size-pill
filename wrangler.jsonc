@@ -7,6 +7,11 @@
   // wrangler dev defaults to binding only 127.0.0.1/::1; in a container (Codespaces) the
   // port-forwarding proxy reaches the dev server via the container's real interface (eth0),
   // not loopback, so without this the forwarded/preview URL 404s even though localhost works.
-  "dev": { "ip": "0.0.0.0" },
-  "ratelimits": [{ "name": "SEARCH_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }]
+  "dev": { "ip": "0.0.0.0", "port": 8787 },
+  "ratelimits": [
+    { "name": "SEARCH_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } },
+    // Separate, stricter budget: each call can cost real money against a paid vision API, unlike a
+    // cached MFDS lookup - see src/prescription-vision.js.
+    { "name": "PRESCRIPTION_VISION_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+  ]
 }

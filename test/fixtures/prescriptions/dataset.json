@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "description": "Synthetic bootstrap set; real reviewed images can be added without changing evaluator.",
+  "fixtures": [
+    {
+      "id": "current-reference",
+      "source": "transcribed-reference",
+      "status": "awaiting-image",
+      "image": null,
+      "labels": "cases/current-reference/labels.json",
+      "ocr": "cases/current-reference/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "user-reference-unknown",
+      "tags": [
+        "table",
+        "with-code",
+        "liquid"
+      ],
+      "notes": "User supplied medication text only; no original image available. Parser transcript score is not image OCR accuracy."
+    },
+    {
+      "id": "reference-rendered",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/reference-rendered/image.png",
+      "labels": "cases/reference-rendered/labels.json",
+      "ocr": "cases/reference-rendered/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "wide-table",
+      "tags": [
+        "table",
+        "with-code",
+        "liquid"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "borderless",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/borderless/image.png",
+      "labels": "cases/borderless/labels.json",
+      "ocr": "cases/borderless/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "spaced-text",
+      "tags": [
+        "borderless",
+        "without-code",
+        "decimal-dose",
+        "liquid"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "wrapped",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/wrapped/image.png",
+      "labels": "cases/wrapped/labels.json",
+      "ocr": "cases/wrapped/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "tall-rows",
+      "tags": [
+        "table",
+        "wrapped-name",
+        "with-code",
+        "decimal-dose"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "reordered",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/reordered/image.png",
+      "labels": "cases/reordered/labels.json",
+      "ocr": "cases/reordered/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "dose-before-name",
+      "tags": [
+        "table",
+        "without-code",
+        "reordered-columns",
+        "decimal-dose",
+        "liquid"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "skewed",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/skewed/image.png",
+      "labels": "cases/skewed/labels.json",
+      "ocr": "cases/skewed/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "rotated-table",
+      "tags": [
+        "table",
+        "with-code",
+        "skewed",
+        "decimal-dose"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "low-light",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/low-light/image.png",
+      "labels": "cases/low-light/labels.json",
+      "ocr": "cases/low-light/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "dim-text",
+      "tags": [
+        "borderless",
+        "without-code",
+        "low-light",
+        "liquid",
+        "decimal-dose"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "mobile-simulated",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/mobile-simulated/image.png",
+      "labels": "cases/mobile-simulated/labels.json",
+      "ocr": "cases/mobile-simulated/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "simulated-camera",
+      "tags": [
+        "table",
+        "with-code",
+        "mobile-photo",
+        "liquid",
+        "skewed"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    },
+    {
+      "id": "decimal-liquid",
+      "source": "synthetic",
+      "status": "ready",
+      "image": "cases/decimal-liquid/image.png",
+      "labels": "cases/decimal-liquid/labels.json",
+      "ocr": "cases/decimal-liquid/ocr.json",
+      "privacyReviewed": true,
+      "layoutFamily": "compact-table",
+      "tags": [
+        "table",
+        "with-code",
+        "decimal-dose",
+        "liquid"
+      ],
+      "notes": "Invented rendering; mobile-photo tag here is a simulation, not a real camera capture."
+    }
+  ]
+}

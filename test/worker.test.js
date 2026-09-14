@@ -139,3 +139,82 @@ test('잘못된 totalCount는 결과 없음으로 취급하지 않는다', async
     assert.equal((await worker.fetch(request('q=시험약'), env, ctx)).status, 502);
   }
 });
+
+test('액체 검색은 허가정보 API·기존 캐시를 사용하며 알약 캐시와 분리된다', async () => {
+  const reads = [], writes = [];
+  globalThis.fetch = async (url, options) => {
+    if (url.hostname === 'demo.supabase.co') {
+      if (options.method === 'POST') { writes.push(JSON.parse(options.body)); return new Response(null, { status: 204 }); }
+      reads.push(url.searchParams.get('cache_key')); return Response.json([]);
+    }
+    assert.ok(url.pathname.includes('getDrugPrdtPrmsnDtlInq06'));
+    assert.equal(url.searchParams.get('item_name'), '시험시럽');
+    return upstream([{ ITEM_SEQ: '987', ITEM_NAME: '시험시럽', PACK_UNIT: '20mL/포', CHART: '딸기향의 시럽제' }]);
+  };
+  const pending = [];
+  const response = await worker.fetch(new Request('https://example.com/api/liquids?item_name=시험시럽'), { ...env, SUPABASE_URL: 'https://demo.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_test' }, { waitUntil: p => pending.push(p) });
+  await Promise.all(pending); const data = await response.json();
+  assert.equal(response.status, 200); assert.equal(data.items[0].permit.data.packaging, '20mL/포'); assert.equal(data.items[0].long, null);
+  assert.notEqual(reads[0], 'eq.' + await cacheKey(['시험시럽', '', '', 1, 20]));
+  assert.equal(writes.length, 1); assert.ok(!JSON.stringify(data).includes('fake+key'));
+});
+
+function imageRequest(bytes = new Uint8Array([1, 2, 3]), type = 'image/png', filename = 'rx.png') {
+  const form = new FormData();
+  form.append('image', new File([bytes], filename, { type }));
+  return new Request('https://example.com/api/prescription/extract', { method: 'POST', body: form });
+}
+
+test('처방전 vision 엔드포인트: GET은 지원하지 않는다', async () => {
+  globalThis.fetch = () => assert.fail('unexpected request');
+  const response = await worker.fetch(new Request('https://example.com/api/prescription/extract'), env, ctx);
+  assert.equal(response.status, 405);
+});
+
+test('처방전 vision 엔드포인트: provider가 설정되지 않으면 501과 함께 fallback 신호를 주고, 이미지를 읽거나 어디로도 전송하지 않는다', async () => {
+  globalThis.fetch = () => assert.fail('provider가 없으면 어떤 네트워크 요청도 없어야 한다');
+  const response = await worker.fetch(imageRequest(), env, ctx);
+  assert.equal(response.status, 501);
+  assert.equal((await response.json()).error, 'vision_not_configured');
+});
+
+test('처방전 vision 엔드포인트: 이미지가 아니거나 너무 크면 provider를 호출하지 않고 거부한다', async () => {
+  const visionEnv = { ...env, PRESCRIPTION_VISION_PROVIDER: 'anthropic', PRESCRIPTION_VISION_API_KEY: 'k' };
+  globalThis.fetch = () => assert.fail('유효하지 않은 이미지는 provider까지 가면 안 된다');
+  assert.equal((await worker.fetch(imageRequest(new Uint8Array([1]), 'text/plain'), visionEnv, ctx)).status, 400);
+  const big = new Uint8Array(20 * 1024 * 1024 + 1);
+  assert.equal((await worker.fetch(imageRequest(big), visionEnv, ctx)).status, 400);
+});
+
+test('처방전 vision 엔드포인트: 호출 제한이 걸리면 provider를 호출하지 않는다', async () => {
+  globalThis.fetch = () => assert.fail('rate limit에 걸리면 어떤 네트워크 요청도 없어야 한다');
+  const visionEnv = { ...env, PRESCRIPTION_VISION_PROVIDER: 'anthropic', PRESCRIPTION_VISION_API_KEY: 'k', PRESCRIPTION_VISION_LIMITER: { limit: async () => ({ success: false }) } };
+  assert.equal((await worker.fetch(imageRequest(), visionEnv, ctx)).status, 429);
+});
+
+test('처방전 vision 엔드포인트: 정상 설정 시 provider 응답을 검증된 medications로 반환하고, Supabase나 다른 곳으로는 절대 전송하지 않는다', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    return Response.json({ content: [{ type: 'tool_use', input: { medications: [
+      { drugName: '듀파락-이지시럽', dosePerAdministration: 1, frequencyPerDay: 3, durationDays: 10, confidence: { productCode: 0, drugName: .9, dose: .9, frequency: .9, duration: .9 } }
+    ] } }] });
+  };
+  const visionEnv = { ...env, PRESCRIPTION_VISION_PROVIDER: 'anthropic', PRESCRIPTION_VISION_API_KEY: 'k', SUPABASE_URL: 'https://demo.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_test' };
+  const response = await worker.fetch(imageRequest(), visionEnv, ctx);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.source, 'vision');
+  assert.equal(data.medications[0].drugName, '듀파락-이지시럽');
+  assert.equal(calls.length, 1, '처방전 이미지에 대해 provider 호출 1회 외에는 어떤 네트워크 요청도 없어야 한다 (Supabase 미포함)');
+  assert.ok(!calls.some(url => url.includes('supabase')), '이미지나 결과를 Supabase에 저장하지 않는다');
+});
+
+test('처방전 vision 엔드포인트: provider 오류 시 502이며 원문/키를 노출하지 않는다', async () => {
+  globalThis.fetch = async () => new Response('secret upstream detail', { status: 500 });
+  const visionEnv = { ...env, PRESCRIPTION_VISION_PROVIDER: 'anthropic', PRESCRIPTION_VISION_API_KEY: 'super-secret-key' };
+  const response = await worker.fetch(imageRequest(), visionEnv, ctx);
+  assert.equal(response.status, 502);
+  const text = await response.text();
+  assert.ok(!text.includes('secret upstream detail')); assert.ok(!text.includes('super-secret-key'));
+});

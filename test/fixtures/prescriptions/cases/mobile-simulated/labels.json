@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "medications": [
+    {
+      "productCode": "644913501",
+      "rawName": "듀파락-이지시럽/15mL/포",
+      "drugName": "듀파락-이지시럽",
+      "dosePerAdministration": 1,
+      "doseUnit": "포",
+      "frequencyPerDay": 3,
+      "durationDays": 10
+    },
+    {
+      "productCode": "649401610",
+      "rawName": "에도스캡슐/1캡슐",
+      "drugName": "에도스캡슐",
+      "dosePerAdministration": 1,
+      "doseUnit": "캡슐",
+      "frequencyPerDay": 2,
+      "durationDays": 60
+    }
+  ]
+}

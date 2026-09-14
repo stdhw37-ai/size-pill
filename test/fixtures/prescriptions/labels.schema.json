@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prescription fixture labels v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "medications"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "medications": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["productCode", "rawName", "drugName", "dosePerAdministration", "doseUnit", "frequencyPerDay", "durationDays"],
+        "properties": {
+          "productCode": {"type": ["string", "null"], "pattern": "^[0-9]{8,9}$"},
+          "rawName": {"type": "string", "minLength": 1},
+          "drugName": {"type": "string", "minLength": 1},
+          "dosePerAdministration": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "doseUnit": {"type": ["string", "null"], "minLength": 1},
+          "frequencyPerDay": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "durationDays": {"type": ["number", "null"], "exclusiveMinimum": 0}
+        }
+      }
+    }
+  }
+}

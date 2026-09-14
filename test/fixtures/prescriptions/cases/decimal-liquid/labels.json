@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "medications": [
+    {
+      "productCode": "345678901",
+      "rawName": "가상델타정/1정",
+      "drugName": "가상델타정",
+      "dosePerAdministration": 0.5,
+      "doseUnit": "정",
+      "frequencyPerDay": 1,
+      "durationDays": 60
+    },
+    {
+      "productCode": "456789012",
+      "rawName": "가상액체-시럽/15mL/포",
+      "drugName": "가상액체-시럽",
+      "dosePerAdministration": 1,
+      "doseUnit": "포",
+      "frequencyPerDay": 3,
+      "durationDays": 10
+    }
+  ]
+}

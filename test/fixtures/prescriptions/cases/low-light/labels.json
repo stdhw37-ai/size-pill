@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "medications": [
+    {
+      "productCode": null,
+      "rawName": "가상알파정10mg/1정",
+      "drugName": "가상알파정10mg",
+      "dosePerAdministration": 0.5,
+      "doseUnit": "정",
+      "frequencyPerDay": 2,
+      "durationDays": 7
+    },
+    {
+      "productCode": null,
+      "rawName": "가상베타시럽/5mL",
+      "drugName": "가상베타시럽",
+      "dosePerAdministration": 2.5,
+      "doseUnit": "mL",
+      "frequencyPerDay": 3,
+      "durationDays": 14
+    }
+  ]
+}
