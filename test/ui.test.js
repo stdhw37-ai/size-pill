@@ -5,6 +5,7 @@ import { setImmediate } from 'node:timers/promises';
 import { Window } from 'happy-dom';
 import { normalize } from '../src/worker.js';
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const medicineFlowScript = await readFile(new URL('../public/medicine-flow.js', import.meta.url), 'utf8');
 const script = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 // Synthetic values, not a real medicine. Field names follow the official Swagger.
 const complete = normalize({ ITEM_SEQ: '123', ITEM_NAME: '시험약 <img src=x onerror=alert(1)>', ENTP_NAME: '시험회사', DRUG_SHAPE: '원형', LENG_LONG: '12', LENG_SHORT: '10', THICK: '4', ITEM_IMAGE: 'https://nedrug.mfds.go.kr/test.png', COLOR_CLASS1: '하양', COLOR_CLASS2: '분홍', PRINT_FRONT: 'A1', PRINT_BACK: 'B2', LINE_FRONT: '+', CHART: '시험용 성상', FORM_CODE_NAME: '정제' });
@@ -17,6 +18,7 @@ function setup(t, fetcher = async () => Response.json(payload())) {
   t.after(() => window.happyDOM.close());
   window.document.write(html.replace('<script src="/app.js" defer></script>', ''));
   window.fetch = fetcher;
+  window.eval(medicineFlowScript);
   window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, getGroups() { return rxGroups; } };');
   const $ = selector => window.document.querySelector(selector);
   const input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input')); };
@@ -411,7 +413,7 @@ test('일반 검색에서도 시럽 등 액체약은 알약 3D 화면이 아니�
   // dataset), but a name search there can still surface a liquid product by name match - this must
   // route the same way the prescription flow already does (isOralLiquidCandidate), never assume
   // 'pill' just because the result came from the pill-search box.
-  const liquid = { ...complete, name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
+  const liquid = { ...complete, form: '시럽제', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
   const { $, input, submit } = setup(t, async () => Response.json(payload([liquid], 1, 1)));
   input('#query', '듀파락'); await submit();
   $('#results button').click();
@@ -425,7 +427,7 @@ test('처방약 비교 화면에서도 액체약 카드는 알약 3D가 아니�
   // unconditionally, so a liquid item chosen in the prescription flow still opened the pill 3D view
   // once it reached the compare list, even though its own selection correctly recorded kind:'liquid'.
   const pill = { ...complete, name: '텔미암정40/10mg' };
-  const liquidItem = { ...complete, id: '999', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
+  const liquidItem = { ...complete, form: '시럽제', id: '999', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
   const { $, window } = setup(t, async path => {
     const term = new URL(path, 'http://x').searchParams.get('item_name') || '';
     return Response.json(payload(term.includes('듀파락') ? [liquidItem] : [pill], 1, 1));
@@ -457,7 +459,7 @@ test('액체약 공식 포장 용량·분율·맛/향을 표시하고 미제공 
   // Packaging text names only pouch units (no "병") so classifyContainerType() resolves to 'pouch'
   // unambiguously - this test is about volume/fraction/flavor display, not type classification
   // (see the dedicated container-type tests below).
-  const liquid = { ...complete, name: '시험시럽', description: '딸기향의 시럽제', permit: { status: 'ok', data: { packaging: '20mL × 30포, 5mL × 10포' } } };
+  const liquid = { ...complete, form: '시럽제', name: '시험시럽', description: '딸기향의 시럽제', permit: { status: 'ok', data: { packaging: '20mL × 30포, 5mL × 10포' } } };
   const paths = [];
   const { $, input, window } = setup(t, async path => { paths.push(path); return Response.json(payload([liquid])); });
   $('[data-mode="liquid"]').click(); input('#liquidQuery', '시험시럽');
@@ -477,10 +479,10 @@ test('액체약 공식 포장 용량·분율·맛/향을 표시하고 미제공 
 
 test('액체약 새 검색 결과가 늦게 끝난 이전 요청으로 바뀌지 않는다', async t => {
   let oldResolve;
-  const { $, window, input } = setup(t, path => path.includes(encodeURIComponent('이전시럽')) ? new Promise(resolve => { oldResolve = resolve; }) : Promise.resolve(Response.json(payload([{ ...complete, name: '다음시럽' }]))));
+  const { $, window, input } = setup(t, path => path.includes(encodeURIComponent('이전시럽')) ? new Promise(resolve => { oldResolve = resolve; }) : Promise.resolve(Response.json(payload([{ ...complete, form: '시럽제', name: '다음시럽' }]))));
   input('#liquidQuery', '이전시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
   input('#liquidQuery', '다음시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
-  oldResolve(Response.json(payload([{ ...complete, name: '이전시럽' }]))); await settle();
+  oldResolve(Response.json(payload([{ ...complete, form: '시럽제', name: '이전시럽' }]))); await settle();
   assert.ok($('#liquidResults').textContent.includes('다음시럽')); assert.ok(!$('#liquidResults').textContent.includes('이전시럽'));
 });
 
@@ -547,7 +549,7 @@ test('resolveContainerType은 포장단위 문구 다음으로 호일/스틱 포
 });
 
 test('병 형태 제품은 분할선 기능을 제공하지 않고 계량도구를 안내하며, 계산은 사진 없이 숫자로만 제공한다', async t => {
-  const bottle = { ...complete, name: '코미시럽', company: '코오롱제약(주)', description: '단맛, 딸기향의 시럽제', permit: { status: 'ok', data: { packaging: '500mL/병' } } };
+  const bottle = { ...complete, form: '시럽제', name: '코미시럽', company: '코오롱제약(주)', description: '단맛, 딸기향의 시럽제', permit: { status: 'ok', data: { packaging: '500mL/병' } } };
   const { $, input, window } = setup(t, async () => Response.json(payload([bottle])));
   input('#liquidQuery', '코미시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
   $('#liquidResults button').click();
@@ -589,7 +591,7 @@ test('포 제품에서 병 제품으로 바로 전환해도(새 검색 없이) �
 });
 
 test('포장 형태를 자동 판정하지 못하면 사용자에게 선택하게 하고, "잘 모르겠어요"는 안전하게 계량도구 안내로 보낸다', async t => {
-  const unknown = { ...complete, name: '애매한시럽', permit: { status: 'ok', data: { packaging: '' } } };
+  const unknown = { ...complete, form: '시럽제', name: '애매한시럽', permit: { status: 'ok', data: { packaging: '' } } };
   const { $, input, window } = setup(t, async () => Response.json(payload([unknown])));
   input('#liquidQuery', '애매한시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
   $('#liquidResults button').click();
@@ -643,7 +645,7 @@ test('isOralLiquidCandidate는 이름 끝의 "액"만으로는 놓치던 알긴�
 });
 
 test('포장 형태를 자동 확인하지 못해도 "검색 결과 없음"이 아니라 제품명·제조사·제형·포장단위를 먼저 보여준다', async t => {
-  const ambiguous = { ...complete, name: '애매한시럽', company: '애매제약', description: '무색투명한 액', permit: { status: 'ok', data: { packaging: '' } } };
+  const ambiguous = { ...complete, form: '시럽제', name: '애매한시럽', company: '애매제약', description: '무색투명한 액', permit: { status: 'ok', data: { packaging: '' } } };
   const { $, input, window } = setup(t, async () => Response.json(payload([ambiguous])));
   input('#liquidQuery', '애매한시럽'); $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
   $('#liquidResults button').click();
@@ -664,7 +666,7 @@ test('내 약 보관함: 검색 결과에서 저장·해제하고 localStorage�
   assert.equal($('#resultName').textContent, '직접 입력 예시');
   const saved = JSON.parse(window.localStorage.getItem('savedMedicinesV1'));
   assert.equal(saved.length, 1);
-  assert.deepEqual(Object.keys(saved[0]).sort(), ['color', 'dosageForm', 'entpName', 'imageUrl', 'itemName', 'itemSeq', 'kind', 'length', 'savedAt', 'shape', 'thickness', 'width'].sort());
+  assert.deepEqual(Object.keys(saved[0]).sort(), ['color', 'dosageForm', 'entpName', 'imageUrl', 'itemName', 'itemSeq', 'kind', 'length', 'metadata', 'savedAt', 'shape', 'thickness', 'width'].sort());
   assert.equal(saved[0].itemSeq, '123'); assert.equal(saved[0].itemName, complete.name); assert.equal(saved[0].length, 12); assert.equal(saved[0].width, 10); assert.equal(saved[0].kind, 'pill');
   // 홈의 "최근 확인한 약"과는 완전히 다른 키에 저장된다 - 제품을 선택한 적이 없으니 최근 목록은 비어 있다.
   assert.equal(JSON.parse(window.localStorage.getItem('recentMedicines') || '[]').length, 0);
@@ -751,7 +753,7 @@ test('추출 결과(unified schema)를 먼저 표시하고 인식 수정은 원�
   assert.equal(window.__rxTest.getGroups()[0].chosen, null);
 });
 
-test('productCode 기반 MFDS 교차검증: 보험코드가 일치하는 후보를 강한 매치로 우선 표시하되 자동 확정하지 않는다', async t => {
+test('productCode 기반 MFDS 교차검증: 유일한 보험코드 일치 후보를 자동 선택한다', async t => {
   // 공식 API는 item_name/entp_name/item_seq로만 검색 가능하고 보험코드(EDI_CODE) 자체를 검색 조건으로
   // 받지 않는다(docs/mfds-api.md) - 그래서 검색은 여전히 이름 기준이고, 각 결과 후보 자신의
   // insuranceCode를 처방전에서 읽은 productCode와 사후 비교해 강한 매치만 표시한다 (item 5).
@@ -764,14 +766,16 @@ test('productCode 기반 MFDS 교차검증: 보험코드가 일치하는 후보�
   await window.eval('processRxNames([window.testRow])');
   const labels = $('#rxCandidates').querySelectorAll('.rx-choice');
   assert.equal(labels.length, 2);
-  assert.ok(labels[0].textContent.includes('✓ 코드 일치'), '보험코드가 일치하는 후보가 먼저 온다');
-  assert.ok(!labels[1].textContent.includes('✓ 코드 일치'));
-  assert.equal($('#rxCandidates input:checked'), null, '자동으로 선택/확정되지는 않는다');
-  assert.equal(window.__rxTest.getGroups()[0].chosen, null);
+  assert.equal(window.__rxTest.getGroups()[0].candidates[0].strongMatch, true);
+  assert.equal(window.__rxTest.getGroups()[0].candidates[1].strongMatch, false);
+  assert.equal($('#rxCandidates .rx-strong-match'), null, 'matching strategy는 일반 UI에 노출하지 않는다');
+  assert.equal($('#rxCandidates input:checked')?.value, '900');
+  assert.equal(window.__rxTest.getGroups()[0].chosen.item.id, '900');
+  assert.equal(window.__rxTest.getGroups()[0].matchingStatus, 'exact-code');
 });
 
 test('처방전 시럽은 알약 검색 장애에도 액체 후보를 선택하고 liquid 화면으로 이동한다', async t => {
-  const liquid = { ...complete, name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
+  const liquid = { ...complete, form: '시럽제', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
   const { window, $ } = setup(t, async path => path.startsWith('/api/medicines?') ? Response.json({ error: '실패' }, { status: 503 }) : Response.json(payload([liquid])));
   await window.eval("processRxNames(['듀파락-이지시럽'])");
   const radio = $('#rxCandidates input'); assert.ok(radio);
@@ -779,4 +783,70 @@ test('처방전 시럽은 알약 검색 장애에도 액체 후보를 선택하�
   assert.equal(window.__rxTest.getGroups()[0].chosen.kind, 'liquid');
   $('#rxSelectedList .flow-actions button').click();
   assert.equal($('#liquidTool').classList.contains('active'), true); assert.equal($('#pillTool').classList.contains('hidden'), true);
+});
+
+test('공식 단일 코드 자동 선택 후 처방 단위·CTA·저장 metadata를 연결한다', async t => {
+  const schema = await import('../public/prescription-schema.js');
+  const item = { ...complete, form: '경질캡슐', name: '에도스캡슐', insuranceCode: '649401610' };
+  const { window, $ } = setup(t, async () => Response.json(payload([item], 1, 1)));
+  window.__rxTest.setMedSchema(schema);
+  window.med = schema.clampMedication({ productCode: '649401610', rawName: '에도스캡슐/1캡슐', drugName: '에도스캡슐', dosePerAdministration: 1, frequencyPerDay: 2, durationDays: 60 });
+  await window.eval('processRxNames([window.med])');
+  assert.equal(window.__rxTest.getGroups()[0].matchingStatus, 'exact-code');
+  assert.ok($('#rxCandidates').textContent.includes('1캡슐 × 하루 2회 × 60일'));
+  assert.equal($('.rx-product-cta').textContent, '실물크기 보기');
+  $('#rxSelectedList .save-heart').click();
+  const saved = JSON.parse(window.localStorage.getItem('savedMedicinesV1'))[0].metadata;
+  assert.equal(saved.productCode, '649401610'); assert.equal(saved.medicineForm, 'solid-oral');
+  assert.equal(saved.dosePerAdministration, 1); assert.equal(saved.frequencyPerDay, 2); assert.equal(saved.durationDays, 60);
+  assert.equal(saved.doseUnit, '캡슐');
+});
+
+test('G: MFDS 전체 실패에도 OCR 네 행과 처방내용·수정 기능을 유지한다', async t => {
+  const schema = await import('../public/prescription-schema.js');
+  const { window, $ } = setup(t, async () => Response.json({ error: 'upstream' }, { status: 502 }));
+  window.__rxTest.setMedSchema(schema);
+  window.meds = ['듀파락-이지시럽', '에도스캡슐', '애니코프캡슐300mg', '셀벡스캡슐(내복)'].map((drugName, i) => schema.clampMedication({ drugName, dosePerAdministration: 1, doseUnit: i ? '캡슐' : '포', frequencyPerDay: i ? 2 : 3, durationDays: i ? 60 : 10 }));
+  await window.eval('processRxNames(window.meds)');
+  assert.equal(window.__rxTest.getGroups().length, 4);
+  assert.equal(window.document.querySelectorAll('.rx-group').length, 4);
+  assert.ok($('#rxCandidates').textContent.includes('1포 × 하루 3회 × 10일'));
+  assert.ok($('#rxCandidates').textContent.includes('공식 제품 확인이 필요합니다'));
+  assert.ok($('#rxCandidates').textContent.includes('제품 직접 선택'));
+  assert.ok($('#rxCandidates').textContent.includes('인식 내용 수정'));
+});
+
+test('F: 직접 selectMedicine 호출도 bottle을 liquid로 보내고 포장 강제 전환을 차단한다', t => {
+  const { window, $ } = setup(t);
+  window.bottle = { ...complete, form: '시럽제', name: '시험시럽', permit: { data: { packaging: '500mL/병' } } };
+  window.eval('selectMedicine(window.bottle)');
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  assert.equal($('#pillTool').classList.contains('hidden'), true);
+  assert.equal($('#bottleNotice').hidden, false);
+  $('#bottleIsActuallyPouch').click();
+  assert.equal($('#liquidGuide').hidden, true);
+  assert.equal($('#bottleNotice').hidden, false);
+  assert.ok($('#bottleNotice').textContent.includes('계량컵 또는 경구용 주사기'));
+});
+
+test('other/unknown 상세 진입은 3D 대신 공통 제품 정보/확인 UI를 연다', t => {
+  const { window, $ } = setup(t);
+  window.eval("selectMedicine({id:'other',name:'시험연고',form:'연고제'})");
+  assert.ok($('#medicineInfoDialog').textContent.includes('의약품 정보'));
+  assert.equal($('#resultName').textContent, '직접 입력 예시');
+  $('#medicineInfoDialog button').click();
+  window.eval("selectMedicine({id:'unknown',name:'시험제품'})");
+  assert.ok($('#medicineInfoDialog').textContent.includes('제품 유형 확인 필요'));
+});
+
+test('과거 pill로 저장된 시럽도 저장 목록·비교·최근 조회에서 공통 분류로 보호한다', async t => {
+  const liquid = { ...complete, form: '시럽제', name: '시험시럽', permit: { data: { packaging: '100mL/병' } } };
+  const { window, $ } = setup(t, async path => Response.json(payload(path.startsWith('/api/liquids') ? [liquid] : [], 1, path.startsWith('/api/liquids') ? 1 : 0)));
+  window.localStorage.setItem('savedMedicinesV1', JSON.stringify([{ itemSeq: liquid.id, itemName: liquid.name, dosageForm: '시럽제', kind: 'pill', length: 12, width: 8, thickness: 4 }]));
+  window.eval('renderStorageList()'); assert.equal($('#storageList input').disabled, true);
+  $('#storageList .flow-actions button').click(); await settle();
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  await window.eval("openRecent('123')");
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  assert.equal($('#pillTool').classList.contains('hidden'), true);
 });

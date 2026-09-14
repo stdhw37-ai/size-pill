@@ -332,6 +332,7 @@
     .flow-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.flow-list{display:grid;gap:12px;margin:16px 0}.flow-list button{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}.flow-list small{display:block;margin-top:5px;color:var(--muted)}
 
     .file-button{position:relative;display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--white);cursor:pointer}.file-button input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}.file-button:focus-within{outline:2px solid var(--green)}
+    .rx-group > .rx-product-cta{width:100%;min-height:48px;font-size:1.05rem;font-weight:800;margin:10px 0}.rx-group > button:not(.rx-product-cta){background:var(--white);color:var(--green);border:1px solid var(--line)}.rx-group > details > summary{cursor:pointer;padding:12px 0;color:var(--muted)}
     .rx-group{border:1px solid var(--line);border-radius:16px;padding:16px;margin:0;min-width:0}.rx-choice{display:flex;align-items:flex-start;gap:12px;padding:12px 0;overflow-wrap:anywhere}.rx-choice input{width:22px;height:22px;flex-shrink:0}.rx-choice small{display:block;color:var(--muted);margin-top:4px}.rx-strong-match{color:var(--green)!important;font-weight:600}
     .rx-silhouette{display:block;background:#bad9cc;border:1px solid #548571;max-width:100%;margin:14px 0;border-radius:50%}
     #fractions button[aria-pressed="true"]{background:var(--green);color:white}.fraction-volume{text-align:center;font-size:1.1rem;font-weight:800}.advanced-grid{display:grid;gap:16px}.advanced-grid .liquid-controls{flex:auto}#cameraAdvanced summary{cursor:pointer;min-height:44px;font-weight:800}
@@ -570,7 +571,7 @@
         <div class="liquid-photo-frame"><img id="bottleProductPhoto" alt="" hidden></div>
       </div>
       <h3>⚠ 병 제품은 분할선으로 용량을 확인할 수 없어요</h3>
-      <p class="tip">병 모양에 따라 액체 높이와 실제 용량이 정확히 비례하지 않을 수 있습니다.<br>정확한 복용량은 눈금이 있는 계량컵, 계량스푼 또는 경구용 주사기로 측정해주세요.</p>
+      <p class="tip">병 모양에 따라 액체 높이와 실제 용량이 정확히 비례하지 않을 수 있습니다.<br>계량컵 또는 경구용 주사기를 사용하세요.</p>
       <div class="flow-actions"><button type="button" id="bottleCalcBtn">복용량 계산하기</button><button type="button" id="bottleSearchAgainBtn">다른 제품 검색</button></div>
       <p class="tip">사진을 직접 확인해보니 실제로는 낱개 포장된 1회용 포/스틱이라면 <button type="button" id="bottleIsActuallyPouch" class="link-btn">여기를 눌러 분할 가이드 보기</button></p>
     </section>
@@ -700,5 +701,6 @@
     <p class="photo-modal-caption">식약처 제공 제품 사진 · 사진은 실물 크기가 아닙니다.</p>
   </dialog>
 </main>
+<script src="/medicine-flow.js" defer></script>
 <script src="/app.js" defer></script>
 </body></html>
