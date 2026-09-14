@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichMedicines, SOURCES } from '../src/mfds-enrichment.js';
+import { enrichMedicines, SOURCES, normalizePermit } from '../src/mfds-enrichment.js';
 import worker from '../src/worker.js';
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -8,6 +8,13 @@ const reply = (items, totalCount = items.length) => Response.json({ header: { re
 const pill = { id: '123', name: '시험약', long: 12, short: 6, thick: 4 };
 const permit = { ITEM_SEQ: '123', ITEM_NAME: '시험약', ENTP_NAME: '시험회사', MAIN_ITEM_INGR: '시험성분', MATERIAL_NAME: '원료', INGR_NAME: '첨가제', ITEM_PERMIT_DATE: '20200101', PERMIT_KIND_NAME: '허가', ENTP_NO: '111', ETC_OTC_CODE: '일반', CHART: '성상', STORAGE_METHOD: '저장', VALID_TERM: '24개월', PACK_UNIT: '10정', CNSGN_MANUF: '제조사', CANCEL_NAME: '정상', CANCEL_DATE: '', ATC_CODE: 'TEST', CHANGE_DATE: '20260101' };
 const easy = { itemSeq: '123', itemName: '시험약', entpName: '시험회사', efcyQesitm: '효능', useMethodQesitm: '사용법', atpnWarnQesitm: '경고', atpnQesitm: '주의', intrcQesitm: '상호작용', seQesitm: '부작용', depositMethodQesitm: '보관', openDe: '20200101', updateDe: '20260101' };
+test('normalizePermit: 공식 허가사항 원문(PDF) 링크는 nedrug.mfds.go.kr만 허용한다', () => {
+  const withDocs = normalizePermit({ ...permit, EE_DOC_ID: 'HTTPS://NEDRUG.MFDS.GO.KR/PBP/CMN/PDFDOWNLOAD/123/EE', UD_DOC_ID: 'https://nedrug.mfds.go.kr/PBP/CMN/PDFDOWNLOAD/123/UD', NB_DOC_ID: 'https://evil.com/fake' });
+  assert.equal(withDocs.efficacyDocUrl, 'https://nedrug.mfds.go.kr/PBP/CMN/PDFDOWNLOAD/123/EE');
+  assert.equal(withDocs.precautionDocUrl, 'https://nedrug.mfds.go.kr/PBP/CMN/PDFDOWNLOAD/123/UD');
+  assert.equal(withDocs.officialDocUrl, '', '허용되지 않은 호스트는 빈 문자열');
+  assert.equal(normalizePermit(permit).officialDocUrl, '', '필드가 없으면 빈 문자열');
+});
 test('공식 endpoint와 대소문자별 파라미터, 하나의 키, 실제 필드 매핑', async () => {
   const calls = [];
   globalThis.fetch = async url => { calls.push(url); return reply([url.pathname.includes('DrugPrdt') ? permit : easy]); };

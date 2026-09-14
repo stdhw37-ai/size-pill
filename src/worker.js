@@ -1,6 +1,7 @@
 import { liquidImage } from './liquid-image.js';
 import { enrichMedicines, normalizePermit, lookup, SOURCES } from './mfds-enrichment.js';
 import { extractPrescriptionVision, ProviderNotConfiguredError, VisionProviderError, resolveProviderName } from './prescription-vision.js';
+import { lookupDurAll } from './mfds-dur.js';
 const ENDPOINT = 'https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03';
 const TTL = 86400;
 const CACHE_VERSION = 3;
@@ -105,12 +106,44 @@ async function prescriptionExtract(request, env) {
     return json({ error: '처방전 이미지를 분석하지 못했습니다.', provider, providerStatus: status, providerMessage: error instanceof VisionProviderError ? error.providerMessage : undefined }, 502);
   }
 }
+// Browser login needs the project URL plus a key it's SAFE to expose (anon/publishable, protected by
+// RLS) - never the SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY that database() above uses, which
+// stay server-only. Same dual-naming pattern as database(): a new-style publishable key if set,
+// otherwise the legacy anon JWT. Returns nulls (not an error) when neither is configured, so the
+// frontend can fail open (skip the login gate) instead of bricking dev/self-hosted setups that
+// haven't set this up yet - see public/auth.js's loadConfig().
+function authConfig(env) {
+  const anonKey = env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || null;
+  const supabaseUrl = env.SUPABASE_URL || null;
+  return json({ supabaseUrl: supabaseUrl && anonKey ? supabaseUrl : null, anonKey: supabaseUrl && anonKey ? anonKey : null });
+}
+// DUR(의약품안전사용서비스) 용량주의/투여기간주의 - 성분/함량(permit)·사용법(easy)과 별개의 독립 출처라
+// 자체 엔드포인트로 온디맨드 조회한다(용량 분석 패널을 열 때만 - src/mfds-dur.js 참고). 서비스키는 여기서만
+// 붙고 절대 브라우저로 전달되지 않는다. 'unavailable'은 현재 이 계정 키가 이 API 자체에 등록되지 않아서
+// 생기는 상태로, 장애('error')와 구분해 그대로 전달한다 - 클라이언트가 서로 다른 문구를 보여줄 수 있도록.
+async function durLookup(request, env) {
+  if (request.method !== 'GET') return json({ error: 'GET 요청만 지원합니다.' }, 405);
+  const url = new URL(request.url);
+  const itemSeq = (url.searchParams.get('item_seq') || '').trim();
+  if (!/^\d{1,20}$/.test(itemSeq)) return json({ error: '품목기준코드가 필요합니다.' }, 400);
+  if (!env.MFDS_SERVICE_KEY) return json({ error: 'DUR 연결을 준비 중입니다.' }, 503);
+  if (env.SEARCH_LIMITER) {
+    const { success } = await env.SEARCH_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
+    if (!success) return json({ error: '검색이 너무 잦습니다. 1분 뒤 다시 시도해주세요.' }, 429);
+  }
+  let serviceKey = env.MFDS_SERVICE_KEY.trim();
+  if (serviceKey.includes('%')) serviceKey = decodeURIComponent(serviceKey);
+  const { capacity, period } = await lookupDurAll(itemSeq, serviceKey, AbortSignal.timeout(8000));
+  return json({ itemSeq, capacity, period, source: '식품의약품안전처 의약품안전사용서비스(DUR)' });
+}
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (url.pathname === '/api/auth/config') return authConfig(env);
     if (url.pathname === '/api/liquid-image') return liquidImage(request, env, imageUrl);
     if (url.pathname === '/api/prescription/extract') return prescriptionExtract(request, env);
+    if (url.pathname === '/api/dur') return durLookup(request, env);
     const liquid = url.pathname === '/api/liquids';
     if (!liquid && url.pathname !== '/api/medicines') return json({ error: '찾을 수 없는 주소입니다.' }, 404);
     if (request.method !== 'GET') return json({ error: 'GET 요청만 지원합니다.' }, 405);

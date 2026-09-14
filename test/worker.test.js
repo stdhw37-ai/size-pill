@@ -218,3 +218,40 @@ test('처방전 vision 엔드포인트: provider 오류 시 502이며 원문/키
   const text = await response.text();
   assert.ok(!text.includes('secret upstream detail')); assert.ok(!text.includes('super-secret-key'));
 });
+
+test('DUR 엔드포인트: GET만 지원하고, 품목기준코드가 없거나 키가 없으면 호출하지 않는다', async () => {
+  globalThis.fetch = () => assert.fail('unexpected request');
+  assert.equal((await worker.fetch(new Request('https://example.com/api/dur?item_seq=123', { method: 'POST' }), env, ctx)).status, 405);
+  assert.equal((await worker.fetch(new Request('https://example.com/api/dur?item_seq=abc'), env, ctx)).status, 400);
+  assert.equal((await worker.fetch(new Request('https://example.com/api/dur'), env, ctx)).status, 400);
+  assert.equal((await worker.fetch(new Request('https://example.com/api/dur?item_seq=123'), {}, ctx)).status, 503);
+});
+
+test('DUR 엔드포인트: 용량주의·투여기간주의를 함께 조회하고 서비스키는 응답에 노출하지 않는다', async () => {
+  globalThis.fetch = async url => {
+    assert.equal(url.searchParams.get('serviceKey'), 'fake+key=');
+    assert.equal(url.searchParams.get('itemSeq'), '200402284');
+    const capacity = url.pathname.includes('Cpcty');
+    return Response.json({ header: { resultCode: '00' }, body: { totalCount: 1, items: { ITEM_SEQ: '200402284', ITEM_NAME: '시험약', INGR_NAME: '시험성분', PROHBT_CONTENT: capacity ? '용량주의 내용' : '투여기간주의 내용' } } });
+  };
+  const response = await worker.fetch(new Request('https://example.com/api/dur?item_seq=200402284'), { MFDS_SERVICE_KEY: 'fake%2Bkey%3D' }, ctx);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.capacity.status, 'ok'); assert.equal(data.capacity.data[0].content, '용량주의 내용');
+  assert.equal(data.period.status, 'ok'); assert.equal(data.period.data[0].content, '투여기간주의 내용');
+  assert.ok(!JSON.stringify(data).includes('fake'));
+});
+
+test('DUR 엔드포인트: 서비스키 미등록(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)은 unavailable로 응답한다', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ OpenAPI_ServiceResponse: { cmmMsgHeader: { errMsg: 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR', returnReasonCode: '30' } } }), { status: 403 });
+  const response = await worker.fetch(new Request('https://example.com/api/dur?item_seq=200402284'), env, ctx);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.capacity.status, 'unavailable'); assert.equal(data.period.status, 'unavailable');
+});
+
+test('DUR 엔드포인트: 호출 제한 적용', async () => {
+  globalThis.fetch = () => assert.fail('unexpected request');
+  const response = await worker.fetch(new Request('https://example.com/api/dur?item_seq=123'), { ...env, SEARCH_LIMITER: { limit: async () => ({ success: false }) } }, ctx);
+  assert.equal(response.status, 429);
+});

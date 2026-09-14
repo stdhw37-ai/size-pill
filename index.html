@@ -332,10 +332,13 @@
     .flow-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.flow-list{display:grid;gap:12px;margin:16px 0}.flow-list button{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}.flow-list small{display:block;margin-top:5px;color:var(--muted)}
 
     .file-button{position:relative;display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--white);cursor:pointer}.file-button input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}.file-button:focus-within{outline:2px solid var(--green)}
+    .rx-group > .rx-product-cta{width:100%;min-height:48px;font-size:1.05rem;font-weight:800;margin:10px 0}.rx-group > button:not(.rx-product-cta){background:var(--white);color:var(--green);border:1px solid var(--line)}.rx-group > details > summary{cursor:pointer;padding:12px 0;color:var(--muted)}
     .rx-group{border:1px solid var(--line);border-radius:16px;padding:16px;margin:0;min-width:0}.rx-choice{display:flex;align-items:flex-start;gap:12px;padding:12px 0;overflow-wrap:anywhere}.rx-choice input{width:22px;height:22px;flex-shrink:0}.rx-choice small{display:block;color:var(--muted);margin-top:4px}.rx-strong-match{color:var(--green)!important;font-weight:600}
     .rx-silhouette{display:block;background:#bad9cc;border:1px solid #548571;max-width:100%;margin:14px 0;border-radius:50%}
-    #fractions button[aria-pressed="true"]{background:var(--green);color:white}.fraction-volume{text-align:center;font-size:1.1rem;font-weight:800}.advanced-grid{display:grid;gap:16px}.advanced-grid .liquid-controls{flex:auto}#cameraAdvanced summary{cursor:pointer;min-height:44px;font-weight:800}
-    .flow button:not(.back-btn){min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff;font-weight:700}.flow button:hover:not(:disabled){border-color:#83ad9d}.flow #rxCompare,.flow #liquidSearch button{background:var(--green);color:white}.flow #rxCompare{width:100%;margin:8px 0 16px}.flow-list button{padding:16px!important;box-shadow:var(--shadow-sm)}.flow-list small{font-weight:400}.flow-actions button{flex:1;min-width:46px;padding:10px 8px!important}
+    #fractions button[aria-pressed="true"],#profileSexGroup button[aria-pressed="true"]{background:var(--green);color:white}.fraction-volume{text-align:center;font-size:1.1rem;font-weight:800}.advanced-grid{display:grid;gap:16px}.advanced-grid .liquid-controls{flex:auto}#cameraAdvanced summary{cursor:pointer;min-height:44px;font-weight:800}
+    body.gate-active nav{display:none}
+    #loginProviders{display:flex;flex-direction:column;gap:10px}#loginProviders button{min-height:48px}#loginProviders button:disabled{opacity:.5;cursor:not-allowed}
+    .flow button:not(.back-btn){min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff;font-weight:700}.flow button:hover:not(:disabled){border-color:#83ad9d}.flow #liquidSearch button{background:var(--green);color:white}.flow-list button{padding:16px!important;box-shadow:var(--shadow-sm)}.flow-list small{font-weight:400}.flow-actions button{flex:1;min-width:46px;padding:10px 8px!important}
     #liquidSearch{display:flex;align-items:flex-end;gap:8px}#liquidSearch .field{flex:1;min-width:0;margin-bottom:0}#liquidSearch button{flex:none;height:48px}#liquidQuery{width:100%}.guide-options{margin:12px 0}.guide-options summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;color:var(--green);font-weight:700}.flow h3{margin-bottom:10px}#fractions{margin-top:0}.flow small{overflow-wrap:anywhere}
     [hidden]{display:none!important}input,select,textarea{font-size:16px}
     /* Photo shows at up to its own natural size (never force-upscaled - a small sharp crop beats a
@@ -384,11 +387,14 @@
     .rx-range-block{margin:12px 0}
     .rx-range-label{font-weight:700;margin-bottom:4px}
     .rx-position{font-weight:700;margin-top:6px}
+    .rx-dur{background:#fff6f4;border:1px solid #f0d9d3;border-radius:10px;padding:10px 12px;margin:12px 0}
+    .rx-dur p{margin:3px 0;font-size:.88rem}
+    .rx-recent-item{padding:14px;border:1px solid var(--line);border-radius:12px;background:white;margin:10px 0}
+    .rx-recent-item p{margin:4px 0}
     .dose-range-bar{margin:4px 0}
     .dose-range-track{position:relative;height:10px;border-radius:99px;background:linear-gradient(90deg,#dbe9e2,#bcd9cb,#dbe9e2)}
     .dose-range-marker{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:var(--green);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transform:translate(-50%,-50%)}
     .dose-range-labels{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:2px}
-    #rxPatientInfo summary{cursor:pointer;min-height:44px;display:list-item;padding:10px 0;color:var(--green);font-weight:700}
   </style>
 </head>
 <body>
@@ -431,11 +437,46 @@
   <section class="screen" id="screenSettings" hidden>
     <div class="screen-title" style="margin-bottom:14px">설정</div>
     <div class="settings-list">
+      <button class="settings-row" type="button" id="settingsProfileRow"><span><b>프로필</b><small id="settingsProfileStatus">불러오는 중…</small></span><span class="arrow">›</span></button>
       <button class="settings-row" type="button" id="settingsCalRow"><span><b>화면 크기 보정</b><small id="settingsCalStatus">보정 필요</small></span><span class="arrow">›</span></button>
       <a class="settings-row" href="#" id="privacyLink"><span><b>개인정보처리방침</b></span><span class="arrow">›</span></a>
       <a class="settings-row" href="#" id="termsLink"><span><b>이용약관</b></span><span class="arrow">›</span></a>
+      <button class="settings-row" type="button" id="settingsLogoutRow"><span><b>로그아웃</b></span><span class="arrow">›</span></button>
     </div>
     <div class="settings-about">알약 실물크기 측정기<br><span id="appVersionFooter">v1.0.0</span></div>
+  </section>
+
+  <!-- LOGIN: shown before any main feature until the user signs in (see app.js initAuth/openGate). -->
+  <section class="screen" id="screenLogin" hidden>
+    <div class="home-hero">
+      <h2>알약 실물크기 측정기</h2>
+      <p>약 정보를 더 안전하고 편리하게 확인하세요.</p>
+    </div>
+    <div class="card flow-panel" id="loginProviders"></div>
+    <p id="loginStatus" role="status" class="tip"></p>
+  </section>
+
+  <!-- PROFILE: reused for both first-login onboarding (no back button, see app.js setProfileMode)
+       and later edits from 설정 > 프로필. birth_date/sex/weight only - age itself is never stored,
+       it is always computed from birth_date at display/analysis time (요청 5). -->
+  <section class="screen" id="screenProfile" hidden>
+    <button type="button" class="back-btn" id="profileBackBtn" hidden>‹ 설정</button>
+    <h2 id="profileTitle">프로필 설정</h2>
+    <p class="tip" id="profileIntro">처방 용량 분석(체중·연령 기준 비교)에 사용할 기본 정보입니다. 로그인한 계정에 저장되며, 값이 없어도 나머지 용량 분석은 그대로 동작합니다.</p>
+    <form id="profileForm" class="card flow-panel">
+      <label class="field"><span>생년월일</span><input id="profileBirthDate" type="date"></label>
+      <div class="field">
+        <span>성별</span>
+        <div class="flow-actions" role="group" aria-label="성별" id="profileSexGroup">
+          <button type="button" data-sex="male" aria-pressed="false">남성</button>
+          <button type="button" data-sex="female" aria-pressed="false">여성</button>
+          <button type="button" data-sex="prefer_not_to_say" aria-pressed="true">선택하지 않음</button>
+        </div>
+      </div>
+      <label class="field"><span>체중 (kg)</span><input id="profileWeight" class="num" type="number" min="0.5" max="300" step="0.1" placeholder="예: 77.0"></label>
+      <p id="profileStatus" role="status" class="tip"></p>
+      <button type="submit" id="profileSave">저장하고 시작하기</button>
+    </form>
   </section>
 
   <!-- PILL MODE: .controls (search) and .stage (result) - both shown side by side on desktop;
@@ -527,16 +568,23 @@
       <p class="tip">OCR에서 추출한 약 이름·함량만 공식 검색에 전송합니다. 인식 오류가 있을 수 있으므로 항목마다 이름·함량·제조사를 확인해 선택해주세요.</p>
       <div class="flow-actions"><button id="rxAdd" type="button">+ 약 직접 추가</button><button id="rxClear" type="button">처방전 내용 지우기</button></div>
     </div>
-    <details id="rxPatientInfo" class="card flow-panel">
-      <summary>환자 정보 (처방 용량 분석용, 선택)</summary>
-      <p class="tip">체중을 입력하지 않으면 체중(mg/kg) 기준 비교는 표시하지 않습니다. 여기 입력한 정보는 이 기기에만 저장되며 서버로 전송되지 않습니다.</p>
-      <label class="field"><span>생년월일 또는 나이 (처방전에서 읽혔다면 확인·수정하세요)</span><input id="rxPatientDob" class="num" type="text" placeholder="예: 2026년생 또는 만 3세"></label>
-      <label class="field"><span>체중 (kg)</span><input id="rxPatientWeight" class="num" type="number" min="0.5" max="200" step="0.1" placeholder="예: 10.5"></label>
+    <div id="rxProfileSummary" class="card flow-panel">
+      <p class="tip">분석 기준: <b id="rxProfileSummaryText">불러오는 중…</b></p>
+      <p class="tip">체중·연령 정보가 없으면 체중(mg/kg)·연령 기준 비교는 생략됩니다. 이 정보는 로그인한 계정의 프로필에 저장되어 처방 용량 분석에 사용됩니다.</p>
+      <button type="button" id="rxProfileEditBtn" class="link-btn">프로필 수정</button>
+    </div>
+    <details id="rxRecent" class="card flow-panel guide-options">
+      <summary>저장된 처방전 보기</summary>
+      <p id="rxRecentStatus" role="status" class="tip"></p>
+      <div id="rxRecentList" class="flow-list"></div>
     </details>
     <h3 id="rxFoundTitle" hidden>처방전에서 찾은 약</h3><div id="rxCandidates" class="flow-list"></div>
-    <section id="rxSelectedSection" hidden><h3 id="rxSelectedTitle">선택한 처방약 0개</h3><div id="rxSelectedList" class="flow-list"></div></section>
-    <button id="rxCompare" type="button" disabled>선택한 약 크기 비교하기</button>
-    <section id="rxComparison" hidden><h2>처방약 크기 비교</h2><p class="tip">같은 mm 비율의 위에서 본 단순 모형입니다. 색상·각인·정확한 외형은 재현하지 않습니다. 실물크기는 개별 제품에서 화면 보정 후 확인하세요.</p><div id="rxCompareList" class="flow-list"></div></section>
+    <section id="rxSelectedSection" hidden>
+      <h3 id="rxSelectedTitle">선택한 처방약 0개</h3>
+      <div id="rxSelectedList" class="flow-list"></div>
+      <div class="flow-actions"><button type="button" id="rxSavePrescription">처방전 저장</button></div>
+      <p id="rxSaveStatus" role="status" class="tip"></p>
+    </section>
   </section>
   <div class="grid liquid-tool flow" id="liquidTool">
     <section class="card flow-panel">
@@ -570,7 +618,7 @@
         <div class="liquid-photo-frame"><img id="bottleProductPhoto" alt="" hidden></div>
       </div>
       <h3>⚠ 병 제품은 분할선으로 용량을 확인할 수 없어요</h3>
-      <p class="tip">병 모양에 따라 액체 높이와 실제 용량이 정확히 비례하지 않을 수 있습니다.<br>정확한 복용량은 눈금이 있는 계량컵, 계량스푼 또는 경구용 주사기로 측정해주세요.</p>
+      <p class="tip">병 모양에 따라 액체 높이와 실제 용량이 정확히 비례하지 않을 수 있습니다.<br>계량컵 또는 경구용 주사기를 사용하세요.</p>
       <div class="flow-actions"><button type="button" id="bottleCalcBtn">복용량 계산하기</button><button type="button" id="bottleSearchAgainBtn">다른 제품 검색</button></div>
       <p class="tip">사진을 직접 확인해보니 실제로는 낱개 포장된 1회용 포/스틱이라면 <button type="button" id="bottleIsActuallyPouch" class="link-btn">여기를 눌러 분할 가이드 보기</button></p>
     </section>
@@ -700,5 +748,6 @@
     <p class="photo-modal-caption">식약처 제공 제품 사진 · 사진은 실물 크기가 아닙니다.</p>
   </dialog>
 </main>
+<script src="/medicine-flow.js" defer></script>
 <script src="/app.js" defer></script>
 </body></html>

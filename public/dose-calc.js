@@ -129,10 +129,16 @@ export function parseOfficialDosage(usageText) {
   const ageMin = ageMatch ? Number(ageMatch[1]) : null;
   const ageUnit = text.includes('개월 이상') && !text.match(/만\s*\d+\s*세\s*이상/) ? 'month' : 'year';
 
-  const mgPerKgSingle = text.match(/1\s*회[^()]*\(?\s*([\d.]+)\s*[~∼-]\s*([\d.]+)\s*mg\s*\/\s*kg/);
+  // [^()]* must be lazy (like mlPerKgSingle right below) - greedy backtracking here previously split a
+  // plain, non-parenthesized "10~15mg/kg" by consuming the "1" of "10" into the prefix and capturing
+  // "0" as the first number, silently producing {min:0, max:15} instead of {min:10, max:15}.
+  const mgPerKgSingle = text.match(/1\s*회[^()]*?\(?\s*([\d.]+)\s*[~∼-]\s*([\d.]+)\s*mg\s*\/\s*kg/);
   const mlPerKgSingle = text.match(/1\s*회[^()]*?([\d.]+)\s*[~∼-]\s*([\d.]+)\s*mL\s*\/\s*kg/);
   const tabletSingle = text.match(/1\s*회\s*([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*(?:정|캡슐)\s*씩?/);
   const mlSingleAged = text.match(/([\d.]+)\s*mL\s*씩\s*복용/);
+  // Plain absolute-mg single dose ("1회 300mg", "1회 250~500mg") - independent of the mg/kg pattern
+  // above; the negative lookahead keeps a "10~15mg/kg" from also matching here as a false "10~15mg".
+  const mgSingle = text.match(/1\s*회[^()]*?([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*mg(?!\s*\/\s*kg)/);
 
   const frequencyMatch = text.match(/1\s*일\s*([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*회/);
   const intervalMatch = text.match(/([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*시간\s*(?:마다|간격)/);
@@ -145,6 +151,7 @@ export function parseOfficialDosage(usageText) {
   const singleDoseMlPerKg = mlPerKgSingle ? range(mlPerKgSingle[1], mlPerKgSingle[2]) : null;
   const singleDoseTablets = tabletSingle ? range(tabletSingle[1], tabletSingle[2]) : null;
   const singleDoseMl = mlSingleAged ? range(mlSingleAged[1]) : null;
+  const singleDoseMg = mgSingle ? range(mgSingle[1], mgSingle[2]) : null;
   const frequency = frequencyMatch ? range(frequencyMatch[1], frequencyMatch[2]) : null;
   const intervalHours = intervalMatch ? range(intervalMatch[1], intervalMatch[2]) : null;
   const dailyMaxMgPerKg = dailyMaxPerKg ? Number(dailyMaxPerKg[1]) : null;
@@ -152,7 +159,7 @@ export function parseOfficialDosage(usageText) {
   const dailyMaxMl = !dailyMaxAbs?.[2] && dailyMaxAbs ? Number(dailyMaxAbs[1]) : null;
   const dailyMaxTabletsVal = dailyMaxTablets ? Number(dailyMaxTablets[1]) : null;
 
-  const hasAnySingleDose = singleDoseMgPerKg || singleDoseMlPerKg || singleDoseTablets || singleDoseMl;
+  const hasAnySingleDose = singleDoseMgPerKg || singleDoseMlPerKg || singleDoseTablets || singleDoseMl || singleDoseMg;
   // Multiple distinct age bands (each with its own dose) mean one single comparison would be
   // misleading without knowing which band applies - the caller must match the patient's age first.
   const ageBandCount = (text.match(/만\s*\d+\s*세\s*이상|생후\s*\d+\s*개월\s*이상/g) || []).length;
@@ -160,9 +167,15 @@ export function parseOfficialDosage(usageText) {
   return {
     confidence: hasAnySingleDose ? 'ok' : 'insufficient',
     ageMin, ageUnit, ageBandCount,
-    singleDoseMgPerKg, singleDoseMlPerKg, singleDoseTablets, singleDoseMl,
+    singleDoseMgPerKg, singleDoseMlPerKg, singleDoseTablets, singleDoseMl, singleDoseMg,
     frequency, intervalHours,
-    dailyMaxMgPerKg, dailyMaxMg, dailyMaxMl, dailyMaxTablets: dailyMaxTabletsVal
+    dailyMaxMgPerKg, dailyMaxMg, dailyMaxMl, dailyMaxTablets: dailyMaxTabletsVal,
+    // item P: 1일 최대 투여횟수 그 자체(주로 frequency.max와 같은 값이지만, "1일 4회를 초과하지 않는다"
+    // 처럼 범위 없이 상한만 명시하는 문장도 있어 별도 패턴으로 캡처한다).
+    maxFrequencyPerDay: (() => {
+      const m = text.match(/1\s*일\s*([\d.]+)\s*회(?:를)?\s*초과하지\s*(?:않는다|마십시오|마세요)/);
+      return m ? Number(m[1]) : (frequency ? frequency.max : null);
+    })()
   };
 }
 
@@ -183,4 +196,153 @@ export function positionInRange(value, min, max) {
   const fraction = (value - min) / (max - min);
   const label = fraction <= 0.2 ? POSITION.LOW_IN_RANGE : fraction >= 0.8 ? POSITION.HIGH_IN_RANGE : POSITION.IN_RANGE;
   return { label, fraction };
+}
+
+// Coarser 5-state vocabulary requested alongside POSITION's finer 5-label range-bar wording - never
+// a verdict either, just which of the two sits closer to a UI badge/one-line summary. positionInRange
+// (and its bar) stay exactly as they were; this only adds names/messages on top for that use.
+export const COMPARISON_STATUS = { WITHIN: 'within-reference', ABOVE: 'above-reference', BELOW: 'below-reference', INSUFFICIENT: 'insufficient-data', NOT_APPLICABLE: 'not-applicable', MULTIPLE_REGIMENS: 'multiple-regimens' };
+export const COMPARISON_MESSAGE = {
+  'within-reference': '허가사항에 기재된 1회 용량 범위에 해당합니다.',
+  'above-reference': '허가사항에 기재된 일반적인 1회 용량 범위보다 높습니다. 처방 의료기관 또는 약사에게 확인하세요.',
+  'below-reference': '허가사항에 기재된 일반적인 1회 용량 범위보다 낮습니다. 환자 상태나 처방 목적에 따라 달라질 수 있습니다.',
+  'insufficient-data': '현재 정보만으로는 공식 용법·용량과 비교할 수 없습니다.',
+  'not-applicable': '이 제품은 현재 자동 용량 비교를 지원하지 않습니다.',
+  'multiple-regimens': '적응증·연령대별로 허가용량이 여러 가지인 제품입니다. 어느 기준이 적용되는지 자동으로 판단하지 않습니다 - 허가사항 전체를 확인하거나 의사·약사와 상의하세요.'
+};
+export function comparisonStatusFromPosition(position) {
+  if (!position) return COMPARISON_STATUS.INSUFFICIENT;
+  if (position.label === POSITION.ABOVE) return COMPARISON_STATUS.ABOVE;
+  if (position.label === POSITION.BELOW) return COMPARISON_STATUS.BELOW;
+  return COMPARISON_STATUS.WITHIN;
+}
+
+// --- Reference-range structuring (item J/K/M) --------------------------------------------------
+// Every function here only converts a range that's already been extracted with confidence - none of
+// them ever invent min/max, a concentration, or a strength. A missing input means null out, not a
+// guess (item S).
+// per-kg range -> absolute mg range using the patient's own weight (item J).
+export function referenceMgRangeFromPerKg(rangePerKg, weightKg) {
+  if (!rangePerKg || !(weightKg > 0)) return null;
+  return { min: rangePerKg.min * weightKg, max: rangePerKg.max * weightKg };
+}
+// mg range -> mL range using the product's own official concentration (item K). Never derived from
+// a product-name guess.
+export function referenceMlRangeFromMg(mgRange, concentrationMgPerMl) {
+  if (!mgRange || !(concentrationMgPerMl > 0)) return null;
+  return { min: mgRange.min / concentrationMgPerMl, max: mgRange.max / concentrationMgPerMl };
+}
+// mg range -> a theoretical product-unit(정/캡슐) range using the official per-unit strength (item M).
+// Reference-only: this never implies a tablet/capsule can or should actually be split.
+export function referenceUnitRangeFromMg(mgRange, strengthMgPerUnit) {
+  if (!mgRange || !(strengthMgPerUnit > 0)) return null;
+  return { min: mgRange.min / strengthMgPerUnit, max: mgRange.max / strengthMgPerUnit };
+}
+
+// Pure computation core of "용량 분석 보기" (item 4-17 of the request): (처방 1회량 + 공식 성분/함량 +
+// 공식 용법·용량 텍스트 + [선택] 체중 + [선택] 나이) -> per-ingredient mg, daily total, mg/kg, and a neutral
+// comparison against the official range. Never a verdict (see the POSITION/COMPARISON_MESSAGE
+// comments above). Kept DOM/network-free on purpose so it is fully unit-testable - app.js's
+// computeDoseAnalysis() only gathers the inputs (official 함량/usage text, which need a fetch) and
+// calls this.
+export function analyzeDose({ ocr, kind, materials, usageText, patientWeightKg, patientAgeYears }) {
+  const guards = [];
+  if (!ocr || !Number.isFinite(ocr.doseAmount)) {
+    return { status: 'insufficient', comparisons: [], perIngredient: [], ocr, guards: ['처방전에서 1회 투여량을 정확히 읽지 못했습니다. 정확한 용량 비교를 위해 추가 정보가 필요합니다.'] };
+  }
+  const rawIngredients = parseIngredients(materials || '');
+  if (!rawIngredients.length) {
+    return { status: 'insufficient', comparisons: [], perIngredient: [], ocr, guards: ['제품의 성분 함량 정보(공식 허가정보)를 확인하지 못했습니다. 정확한 용량 비교를 위해 추가 정보가 필요합니다.'] };
+  }
+  const concByMl = kind === 'liquid' ? new Map(concentrationsPerMl(materials).map(c => [c.name, c.mgPerMl])) : null;
+  const multiIngredient = rawIngredients.length > 1;
+  // Multi-ingredient (복합제) products are never summed into one "총 mg" - each ingredient keeps its
+  // own line throughout (item 17), since a single combined number would misrepresent a combination
+  // product as if it were one active ingredient with one reference range.
+  if (multiIngredient) guards.push('복합제입니다 - 성분별로 각각 계산했습니다.');
+
+  const unitOk = kind === 'liquid' ? (!ocr.doseUnit || ocr.doseUnit === 'mL') : (!ocr.doseUnit || ocr.doseUnit === 'tablet');
+  if (!unitOk) guards.push('처방전에서 읽은 단위가 제품 제형과 달라 자동 계산을 보류합니다.');
+
+  const perIngredient = rawIngredients.map(ing => {
+    if (!unitOk) return { name: ing.name, status: 'insufficient' };
+    const doseMg = kind === 'liquid' ? doseFromSyrup(concByMl.get(ing.name), ocr.doseAmount) : doseFromTablet(ing.amountMg, ocr.doseAmount);
+    if (doseMg === null) return { name: ing.name, status: 'insufficient' };
+    const dailyMg = Number.isFinite(ocr.frequencyPerDay) ? dailyTotal(doseMg, ocr.frequencyPerDay) : null;
+    const mgPerKgDose = patientWeightKg ? perKg(doseMg, patientWeightKg) : null;
+    const mgPerKgDay = patientWeightKg && dailyMg !== null ? perKg(dailyMg, patientWeightKg) : null;
+    return { name: ing.name, status: 'ok', doseMg, dailyMg, mgPerKgDose, mgPerKgDay };
+  });
+
+  const official = usageText ? parseOfficialDosage(usageText) : { confidence: 'insufficient' };
+  if (!patientWeightKg && (official.singleDoseMgPerKg || official.singleDoseMlPerKg)) guards.push('체중을 입력하지 않아 체중(mg/kg·mL/kg) 기준 비교를 표시하지 않습니다.');
+  // Patient age only ever comes from the signed-in user's profile birth_date, computed via
+  // auth.ageYearsFromBirthDate (see public/auth.js) - never guessed from free text - so a single
+  // unambiguous official minimum age can be compared safely. Multiple age bands stay an ambiguity guard only:
+  // parseOfficialDosage captures just the first band's dose range, so there is no per-band data to
+  // pick between even when the patient's age is known - never silently guess which band applies.
+  if (official.ageMin != null) {
+    if (patientAgeYears == null) guards.push('환자 연령 정보가 없어 허가사항의 연령 기준과 비교할 수 없습니다.');
+    else if (official.ageBandCount <= 1) {
+      const ageInOfficialUnit = official.ageUnit === 'month' ? patientAgeYears * 12 : patientAgeYears;
+      if (ageInOfficialUnit < official.ageMin) {
+        guards.push(`환자 연령이 허가사항에 명시된 대상 연령(만 ${official.ageMin}${official.ageUnit === 'month' ? '개월' : '세'} 이상)보다 어립니다. 허가사항을 확인하거나 의사·약사와 상의하세요.`);
+      }
+    }
+  }
+  if (official.ageBandCount > 1) guards.push('연령대별로 허가용량이 다른 제품입니다 - 처방전 인식만으로는 어느 연령대 기준인지 자동으로 판단하지 않습니다. 허가사항 전체를 직접 확인해주세요.');
+  if (/신[ \t]*기능|간[ \t]*기능|투석|신부전|간부전/.test(usageText || '')) guards.push('신기능·간기능 등에 따라 용량 조절이 필요할 수 있는 약입니다. 해당 사항이 있다면 의사·약사와 상의해주세요.');
+  if (multiIngredient && perIngredient.some(p => p.status === 'insufficient')) guards.push('복합제 성분 중 일부는 용량을 계산하지 못했습니다.');
+
+  // 적응증/연령대가 여러 개면(item N) 어느 기준이 맞는지 자동으로 고를 수 없으므로 within/above/below
+  // 판정 자체를 하지 않는다 - comparisonStatus가 'multiple-regimens'로만 표시되고 position은 null.
+  const multipleRegimens = official.ageBandCount > 1;
+  // Comparison priority: weight-based mg/kg > weight-based mL/kg > plain absolute mg > plain
+  // tablet-count range > plain single mL (only when there's exactly one age band).
+  const comparisons = perIngredient.filter(p => p.status === 'ok').map(p => {
+    let range = null, actual = null, unit = '';
+    if (patientWeightKg && official.singleDoseMgPerKg && Number.isFinite(p.mgPerKgDose)) { range = official.singleDoseMgPerKg; actual = p.mgPerKgDose; unit = 'mg/kg/회'; }
+    else if (patientWeightKg && kind === 'liquid' && official.singleDoseMlPerKg && Number.isFinite(patientWeightKg)) { range = official.singleDoseMlPerKg; actual = round1(ocr.doseAmount / patientWeightKg); unit = 'mL/kg/회'; }
+    else if (official.singleDoseMg && Number.isFinite(p.doseMg)) { range = official.singleDoseMg; actual = round1(p.doseMg); unit = 'mg/회'; }
+    else if (kind === 'pill' && official.singleDoseTablets && Number.isFinite(ocr.doseAmount)) { range = official.singleDoseTablets; actual = ocr.doseAmount; unit = '정/회'; }
+    else if (kind === 'liquid' && official.singleDoseMl && official.ageBandCount <= 1 && Number.isFinite(ocr.doseAmount)) { range = official.singleDoseMl; actual = ocr.doseAmount; unit = 'mL/회'; }
+    const position = !multipleRegimens && range ? positionInRange(actual, range.min, range.max) : null;
+    // insufficient-data (not not-applicable) whenever this ingredient in principle COULD be compared
+    // but a specific condition is missing (no weight, ambiguous age band, ...) - not-applicable is
+    // reserved for products this feature does not attempt to compare at all (see item 12).
+    const comparisonStatus = multipleRegimens ? COMPARISON_STATUS.MULTIPLE_REGIMENS : comparisonStatusFromPosition(position);
+
+    // item J/K/M: absolute mg/mL/unit reference ranges - derived whenever the inputs allow it,
+    // independent of which basis above actually matched this comparison. Never a verdict, just
+    // additional numbers the person can read alongside the range/position above.
+    const referenceMgRange = official.singleDoseMg || referenceMgRangeFromPerKg(official.singleDoseMgPerKg, patientWeightKg);
+    const concentrationMgPerMl = kind === 'liquid' ? concByMl.get(p.name) : null;
+    const referenceMlRange = kind === 'liquid' ? referenceMlRangeFromMg(referenceMgRange, concentrationMgPerMl) : null;
+    const strengthMgPerUnit = kind !== 'liquid' ? rawIngredients.find(i => i.name === p.name)?.amountMg ?? null : null;
+    const referenceUnitRange = kind !== 'liquid' ? referenceUnitRangeFromMg(referenceMgRange, strengthMgPerUnit) : null;
+    // item L: a plain magnitude, never phrased as "더 먹어도 됨"/"늘려도 됩니다" - the caller must not
+    // add that wording either (see dose-calc.js's own POSITION/COMPARISON_MESSAGE comments).
+    const gapToReferenceMaxMg = referenceMgRange && Number.isFinite(p.doseMg) ? round1(Math.abs(referenceMgRange.max - p.doseMg)) : null;
+    const gapToReferenceMaxMl = referenceMlRange && Number.isFinite(ocr.doseAmount) ? round1(Math.abs(referenceMlRange.max - ocr.doseAmount)) : null;
+
+    // item P: 허가사항 기준 1일 상한 - mg/day가 직접 명시되었거나 mg/kg/day를 체중으로 환산.
+    const dailyReferenceMaxMg = official.dailyMaxMg ?? (official.dailyMaxMgPerKg != null && patientWeightKg ? official.dailyMaxMgPerKg * patientWeightKg : null);
+    const dailyReferenceMaxMl = kind === 'liquid'
+      ? (official.dailyMaxMl ?? (dailyReferenceMaxMg != null && concentrationMgPerMl > 0 ? round1(dailyReferenceMaxMg / concentrationMgPerMl) : null))
+      : null;
+
+    return {
+      name: p.name, ...p, range, actual, unit, position, comparisonStatus, comparisonMessage: COMPARISON_MESSAGE[comparisonStatus],
+      referenceMgRange, referenceMlRange, referenceUnitRange, gapToReferenceMaxMg, gapToReferenceMaxMl,
+      dailyReferenceMaxMg: Number.isFinite(dailyReferenceMaxMg) ? round1(dailyReferenceMaxMg) : null, dailyReferenceMaxMl
+    };
+  });
+  const anyComparable = comparisons.some(c => c.position);
+  const status = multipleRegimens ? (perIngredient.some(p => p.status === 'ok') ? 'partial' : 'insufficient')
+    : anyComparable ? 'ok' : (perIngredient.some(p => p.status === 'ok') ? 'partial' : 'insufficient');
+  if (status !== 'ok' && !guards.length) guards.push('정확한 용량 비교를 위해 추가 정보가 필요합니다.');
+  return {
+    status, ocr, perIngredient, comparisons, official, usageText, guards,
+    sourceLabel: 'e약은요 · 식품의약품안전처', sourceUrl: 'https://www.data.go.kr/data/15075057/openapi.do'
+  };
 }

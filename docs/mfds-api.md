@@ -103,3 +103,21 @@ JSON의 최상위 `header/body`와 `response.header/body`를 지원합니다. `i
 `PACK_UNIT`에 명시된 mL 값만 용량 선택지로 사용합니다. 복수 포장단위와 `20mL × 30포` 등의 포장 개수가 있으므로 자동 선택하지 않습니다. 사용자 확인 후 계산하며, 함량/성분/제품명에서 총 용량을 추론하지 않습니다. 공식 값이 없으면 분율만 표시하거나 사용자가 포장을 확인해 총 용량을 입력합니다.
 
 2026-09-13 로컬 Worker와 설정된 인증정보를 사용한 실제 연결에서 코미시럽 검색 200 / 1개 / `500mL/병`, 텔미암 검색 200 / 12개를 확인했습니다. 이는 당시 검색 응답 확인이며 전체 의약품의 정확성 또는 가용성 보장이 아닙니다.
+
+## 공식 허가사항 원문(PDF) 링크 (2026-09-14)
+
+제품 허가정보 상세조회(`getDrugPrdtPrmsnDtlInq06`) 실제 응답에 `EE_DOC_ID`(효능효과·용법용량 첨부문서), `UD_DOC_ID`(사용상주의사항 첨부문서), `NB_DOC_ID`(전체 첨부문서 - 가장 포괄적인 "공식 허가사항 원문")가 `HTTPS://NEDRUG.MFDS.GO.KR/PBP/CMN/PDFDOWNLOAD/<품목기준코드>/<EE|UD|NB>` 형태로 들어있는 것을 2026-09-14 실제 인증키 호출로 확인했습니다(예: 에도스캡슐 200402284). `src/mfds-enrichment.js`의 `normalizePermit`이 `officialDocUrl`/`efficacyDocUrl`/`precautionDocUrl`로 매핑하며, `nedrug.mfds.go.kr` 호스트만 허용합니다(다른 필드의 `imageUrl`과 같은 허용목록 방식).
+
+## DUR(의약품안전사용서비스) 품목정보 - 용량주의/투여기간주의 (2026-09-14)
+
+공공데이터포털 [식품의약품안전처_의약품안전사용서비스(DUR)품목정보](https://www.data.go.kr/data/15059486/openapi.do)의 swaggerJson을 직접 확인했습니다: host `apis.data.go.kr/1471000/DURPrdlstInfoService03`, 이번에 연결한 두 상세기능은 `getCpctyAtentInfoList03`(용량주의)·`getMdctnPdAtentInfoList03`(투여기간주의)이며 응답 필드는 `INGR_NAME`(DUR성분), `ITEM_SEQ`/`ITEM_NAME`, `MAIN_INGR`, `PROHBT_CONTENT`(금기내용), `REMARK`, `NOTIFICATION_DATE`, `CHANGE_DATE` 등입니다. `src/mfds-dur.js`가 이 필드를 그대로 정규화합니다.
+
+이 swagger는 요청 파라미터를 문서화하지 않습니다 - 같은 세대 API인 e약은요(`DrbEasyDrugInfoService`)의 camelCase 관례를 따라 `itemSeq`로 연결했지만, 아래 이유로 실제 트래픽으로 파라미터 이름 자체를 검증하지는 못했습니다.
+
+**실제 연결 확인(새 키 발급 없이, 기존 `MFDS_SERVICE_KEY` 그대로)**: 이미 정상 응답하는 동일 키로 이 DUR API(`getCpctyAtentInfoList03`)를 호출하면 매번 HTTP 403과 함께 다음을 받았습니다.
+
+```json
+{"OpenAPI_ServiceResponse":{"cmmMsgHeader":{"errMsg":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR","returnReasonCode":"30"}}}
+```
+
+같은 키로 낱알식별·제품허가정보·e약은요는 정상(200, `resultCode: "00"`) 응답합니다 - 즉 키 자체는 유효하지만, 공공데이터포털에서 이 DUR API는 (다른 세 API와 별개로) **개별 활용신청 승인**이 필요하고 현재 계정에는 그 승인이 없습니다. 새 키를 발급하거나 가정하지 않고, `src/worker.js`의 `/api/dur`와 `src/mfds-dur.js`는 이 오류를 `error`(일시적 장애)와 구분되는 `status: 'unavailable'`로 반환하도록 연결해 두었습니다 - 활용신청이 승인되면 코드 변경 없이 그대로 동작합니다. 앱은 현재 이 상태를 "DUR 연동이 아직 승인되지 않았습니다"로 투명하게 안내합니다(`public/app.js`의 `renderDurBlock`).
