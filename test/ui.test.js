@@ -7,6 +7,7 @@ import { normalize } from '../src/worker.js';
 import * as auth from '../public/auth.js';
 import * as prescriptions from '../public/prescriptions.js';
 import * as realDoseCalc from '../public/dose-calc.js';
+import * as dailyDose from '../public/prescription-dose.js';
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const medicineFlowScript = await readFile(new URL('../public/medicine-flow.js', import.meta.url), 'utf8');
 const script = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -33,12 +34,32 @@ function setup(t, fetcher = async () => Response.json(payload()), { skipAuthGate
   // prescriptions.js도 auth.js/dose-calc.js와 같은 이유로 이 하네스에서 동적 import()가 실패한다(happy
   // -dom의 disableJavaScriptFileLoading) - setPrescriptionsApi로 실제(Node import) 모듈을 직접 주입해
   // loadPrescriptionsApi()의 동적 import를 우회한다. 저장/조회 로직 자체는 이 실제 모듈이 수행한다.
-  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, setPrescriptionsApi(value) { prescriptionsApi = value; }, setDoseCalc(value) { doseCalc = value; }, getGroups() { return rxGroups; }, getPatientAgeYears() { return patientAgeYears; }, getPatientWeightKg() { return patientWeightKg; }, getAuthGateOpen() { return authGateOpen; }, getCurrentProfile() { return currentProfile; }, applyAuthResolution(resolvedAuthApi, session, profile, config) { return applyAuthResolution(resolvedAuthApi, session, profile, config); }, setFlowSearchTimeoutMs(ms) { FLOW_SEARCH_TIMEOUT_MS = ms; } };');
+  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, setPrescriptionsApi(value) { prescriptionsApi = value; }, setDoseCalc(value) { doseCalc = value; }, setRxDailyCalc(value) { rxDailyCalc = value; }, setPatientAgeYears(value) { patientAgeYears = value; }, getGroups() { return rxGroups; }, getPatientAgeYears() { return patientAgeYears; }, getPatientWeightKg() { return patientWeightKg; }, setPatientWeightKg(kg) { patientWeightKg = kg; }, getAuthGateOpen() { return authGateOpen; }, getCurrentProfile() { return currentProfile; }, applyAuthResolution(resolvedAuthApi, session, profile, config) { return applyAuthResolution(resolvedAuthApi, session, profile, config); }, setFlowSearchTimeoutMs(ms) { FLOW_SEARCH_TIMEOUT_MS = ms; } };');
   const $ = selector => window.document.querySelector(selector);
   const input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input')); };
   const submit = async () => { $('#searchForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle(); };
   return { window, $, input, submit };
 }
+
+function pickRx(window, index = 0) {
+  const doc = window.document;
+  doc.querySelectorAll('#rxSelectedList .rx-row-button')[index].click();
+  doc.querySelector('#rxDetailDialog .rx-action-product').click();
+  const radio = doc.querySelector('#rxDetailDialog input[type=radio]');
+  assert.ok(radio, '공식 제품 후보가 상세에서 보인다');
+  radio.checked = true; radio.dispatchEvent(new window.Event('change'));
+  doc.querySelector('#rxDetailDialog .rx-product-confirm').click();
+}
+function installRx(window, items, doseAmount = 1) {
+  window.__rxTest.setRxDailyCalc(dailyDose); window.__rxTest.setPatientAgeYears(32);
+  window.__prescriptionItems = items;
+  window.eval(`window.__rxTest.getGroups().splice(0, window.__rxTest.getGroups().length, ...window.__prescriptionItems.map((item, index) => ({ id: index + 9000, term: item.name, source: 'ocr',
+    row: { drugName: item.name, rawName: item.name, dosePerAdministration: ${doseAmount}, doseUnit: '캡슐', frequencyPerDay: 2, durationDays: 60, needsReview: false },
+    candidates: [], chosen: { item, kind: 'pill', fetchedAt: '2026-09-15T00:00:00Z' } }))); renderRxGroups();`);
+}
+const dailyCapsule = { ...complete, id: '200402284', name: '에도스캡슐(에르도스테인)', form: '캡슐',
+  permit: { status: 'ok', data: { ingredients: '에르도스테인', materials: '총량 : 1캡슐 중|성분명 : 에르도스테인|분량 : 300|단위 : 밀리그램' } },
+  easy: { status: 'ok', data: { usage: '성인은 1회 1캡슐(300 mg)씩, 1일 2~3회 복용합니다.' } } };
 
 test('검색·상세 식별정보·XSS 방어·누락 치수 전환 및 직접입력 복귀', async t => {
   const { $, submit, input } = setup(t);
@@ -62,13 +83,18 @@ test('검색·상세 식별정보·XSS 방어·누락 치수 전환 및 직접�
 test('업체명·품목번호 필터를 페이지 이동에도 유지한다', async t => {
   const calls = [];
   const { $, input, submit } = setup(t, async path => {
-    const params = new URL(path, 'https://size-pill.example').searchParams; calls.push(params);
+    const url = new URL(path, 'https://size-pill.example'), params = url.searchParams;
+    calls.push({ pathname: url.pathname, params });
     return Response.json(payload([complete], Number(params.get('pageNo')), 21));
   });
   input('#query', '시험약'); input('#companyQuery', '시험회사'); input('#itemSeqQuery', '123'); await submit();
   $('#nextPage').click(); await settle();
-  assert.equal(calls.length, 2); assert.equal(calls[1].get('pageNo'), '2');
-  for (const params of calls) {
+  // 통합검색(요청 1/8)이라 검색마다 /api/medicines·/api/liquids 두 곳을 함께 부른다 - 페이지네이션은
+  // 계속 /api/medicines 기준이다.
+  const medicineCalls = calls.filter(c => c.pathname === '/api/medicines');
+  assert.equal(medicineCalls.length, 2); assert.equal(medicineCalls[1].params.get('pageNo'), '2');
+  assert.ok(calls.some(c => c.pathname === '/api/liquids'), '허가정보 소스도 함께 조회한다');
+  for (const { params } of calls) {
     assert.equal(params.get('item_name'), '시험약'); assert.equal(params.get('entp_name'), '시험회사'); assert.equal(params.get('item_seq'), '123');
     assert.equal(params.has('serviceKey'), false);
   }
@@ -76,15 +102,51 @@ test('업체명·품목번호 필터를 페이지 이동에도 유지한다', as
 });
 
 test('이미지 오류와 빈 결과·API 오류를 안내한다', async t => {
-  let response = Response.json(payload());
-  const { $, window, input, submit } = setup(t, async () => response);
+  // search()가 이제 /api/medicines와 /api/liquids를 함께 조회하므로(통합검색), 같은 Response 인스턴스를
+  // 두 번 재사용할 수 없다(body는 한 번만 읽을 수 있다) - 매 fetch 호출마다 새 Response를 만든다.
+  let respond = () => Response.json(payload());
+  const { $, window, input, submit } = setup(t, async () => respond());
   input('#query', '시험약'); await submit(); $('#results button').click();
   $('#medicineImage img').dispatchEvent(new window.Event('error'));
   assert.ok($('#medicineImage').textContent.includes('불러올 수 없습니다'));
-  response = Response.json(payload([], 1, 0)); await submit(); assert.equal($('#results').children.length, 0);
+  respond = () => Response.json(payload([], 1, 0)); await submit(); assert.equal($('#results .result'), null); assert.ok($('#results .empty-state'));
   assert.ok($('#searchStatus').textContent.includes('검색 결과가 없습니다'));
-  response = Response.json({ error: '잠시 후 다시 검색해주세요.' }, { status: 502 }); await submit();
+  respond = () => Response.json({ error: '잠시 후 다시 검색해주세요.' }, { status: 502 }); await submit();
   assert.equal($('#searchStatus').textContent, '잠시 후 다시 검색해주세요.');
+});
+
+test('통합검색: 정제·시럽·산제·외용제가 한 검색에서 제형 배지와 함께 나오고, 빠른 확인 칩은 같은 결과를 필터만 한다', async t => {
+  const tablet = { ...complete, name: '코미정' };
+  const syrup = { id: '901', name: '코미시럽', company: '코오롱제약(주)', form: '시럽제', permit: { status: 'ok', data: { packaging: '500mL/병' } } };
+  const powder = { id: '902', name: '코미산', company: '코오롱제약(주)', form: '산제', permit: { status: 'ok', data: { packaging: '1g/포 × 20포' } } };
+  const ointment = { id: '903', name: '코미크림', company: '코오롱제약(주)', description: '백색의 크림제' };
+  const { $, window, input, submit } = setup(t, async path => {
+    if (String(path).startsWith('/api/liquids')) return Response.json(payload([syrup, powder, ointment], 1, 3));
+    return Response.json(payload([tablet], 1, 1));
+  });
+  input('#query', '코미'); await submit();
+  const badges = () => [...$('#results').children].map(el => ({ name: el.querySelector('b').textContent, badge: el.querySelector('.badge').textContent }));
+  assert.equal($('#results').children.length, 4, '정제·시럽·산제·외용제가 모두 한 목록에 나온다');
+  assert.deepEqual(new Set(badges().map(b => b.name)), new Set(['코미정', '코미시럽', '코미산', '코미크림']));
+  assert.ok(badges().some(b => b.name === '코미정' && b.badge.includes('정')), '정제 배지');
+  assert.ok(badges().some(b => b.name === '코미시럽' && b.badge.includes('시럽')), '시럽 배지');
+
+  // 크기 확인: 같은 통합검색 결과를 정제/캡슐만 남기는 필터일 뿐이다 (요청 3/8).
+  $('#quickChipSize').click();
+  input('#query', '코미'); await submit();
+  assert.equal($('#results').children.length, 1);
+  assert.equal($('#results b').textContent, '코미정');
+
+  // 맛/복용감: 정제뿐 아니라 시럽·산제까지 검색되지만(요청 3), 외용제(크림)는 맛과 무관하므로 제외된다.
+  $('[data-mode="home"]').click(); $('#quickChipTaste').click();
+  input('#query', '코미'); await submit();
+  const tasteNames = [...$('#results').children].map(el => el.querySelector('b').textContent);
+  assert.deepEqual(new Set(tasteNames), new Set(['코미정', '코미시럽', '코미산']), '정제·시럽·산제는 포함, 외용제는 제외');
+
+  // 일반 "약 검색" 진입으로 돌아오면 필터가 풀린다.
+  $('[data-mode="home"]').click(); $('.home-search-cta').click();
+  input('#query', '코미'); await submit();
+  assert.equal($('#results').children.length, 4, '일반 검색으로 돌아오면 다시 전체가 보인다');
 });
 
 test('늦게 끝난 이전 요청의 오류가 새 검색 결과를 덮어쓰지 않는다', async t => {
@@ -186,12 +248,13 @@ test('맛/향 문구가 성상(CHART)에 없어도 제품허가정보의 첨가�
   assert.ok($('#flavorChips').textContent.includes('오렌지향'));
 });
 
-test('연질캡슐처럼 공식 문구에 맛/향이 전혀 없으면 겉보기 색만으로 추정하지 않고 배지를 숨긴다', async t => {
+test('연질캡슐처럼 공식 문구에 맛/향이 전혀 없으면 겉보기 색만으로 추정하지 않고 "등록된 맛 정보 없음"을 보여준다', async t => {
   // 실제 탁센400이부프로펜연질캡슐 데이터 형태: 반투명한 파란 캡슐이지만 CHART/성상 어디에도 맛/향 문구가 없다.
   const softCapsule = normalize({ ITEM_SEQ: '333', ITEM_NAME: '탁센400이부프로펜연질캡슐', ENTP_NAME: '시험회사', DRUG_SHAPE: '타원형', LENG_LONG: '16.7', LENG_SHORT: '9.9', THICK: '9.9', COLOR_CLASS1: '파랑, 투명', CHART: '무색 내지 엷은 청색의 액상 내용물이든 청색의 투명한 타원형 연질캡슐' });
   const { $, input, submit } = setup(t, async () => Response.json(payload([softCapsule])));
   input('#query', '시험약'); await submit(); $('#results button').click();
-  assert.equal($('#flavorBadge').hidden, true, '색상만으로 맛을 추정해 배지를 보여주면 안 된다');
+  assert.equal($('#flavorBadge').hidden, false, '정보가 없어도 배지는 계속 보인다(요청 7) - 숨기지 않는다');
+  assert.equal($('#flavorChips').textContent, '등록된 맛 정보 없음', '색상만으로 맛을 추정해 채우지 않는다');
 });
 
 test('상세정보를 펼치지 않아도 모양·색상·식별표시 요약 줄이 보이고, 맛/향이 확인되면 별도 배지로 표시한다', async t => {
@@ -208,10 +271,12 @@ test('상세정보를 펼치지 않아도 모양·색상·식별표시 요약 �
   $('#results').children[1].click(); // complete: 모양·색상·식별표시는 있지만 맛/향 표현은 없는 제품
   assert.equal($('#quickFacts').hidden, false, '맛/향이 없어도 모양·색상 요약은 계속 보인다');
   assert.ok($('#quickFacts').textContent.includes(complete.shape));
-  assert.equal($('#flavorBadge').hidden, true, '맛/향 정보가 없으면 "미제공"이 아니라 배지 자체를 숨긴다');
+  assert.equal($('#flavorBadge').hidden, false, '맛/향 정보가 없어도 배지는 숨기지 않고 "등록된 맛 정보 없음"을 보여준다 (요청 7)');
+  assert.equal($('#flavorChips').textContent, '등록된 맛 정보 없음');
   $('#results').children[2].click(); // bare: 정말 아무 요약 정보도 없는 제품
   assert.equal($('#quickFacts').hidden, true);
-  assert.equal($('#flavorBadge').hidden, true);
+  assert.equal($('#flavorBadge').hidden, false);
+  assert.equal($('#flavorChips').textContent, '등록된 맛 정보 없음');
 });
 
 test('제품 사진을 누르면 확대 모달이 열리고, 3D 화면에는 같은 사진을 반복해서 보여주지 않는다', async t => {
@@ -243,6 +308,32 @@ test('장축·단축·두께가 모두 있으면 "크기" 요약(L × S × T mm)
   assert.ok($('#sizeSummary').textContent.includes('12 × 10 × 4 mm'));
   $('#results').children[1].click(); // missing THICK ("3~4" is not a clean number)
   assert.equal($('#sizeSummary').hidden, true);
+});
+
+test('정제 검색: 핵심정보 카드가 3D보다 먼저 보이고 복용방법·보관방법·제형을 보여주며, 3D 실물크기는 기본적으로 접혀 있다 (요청 3/9, 완료보고 테스트 1)', async t => {
+  const tablet = { ...complete, easy: { status: 'ok', data: { usage: '성인은 1회 1~2정씩, 1일 3회 복용합니다.', storage: '실온 보관' } }, permit: { status: 'ok', data: { storage: '실온(1~30℃) 보관' } } };
+  const { $, window, input, submit } = setup(t, async () => Response.json(payload([tablet])));
+  window.__rxTest.setDoseCalc(realDoseCalc);
+  input('#query', '시험약'); await submit();
+  $('#results').children[0].click();
+  assert.equal($('#coreInfoCard').hidden, false, '핵심정보 카드가 보인다');
+  assert.ok($('#coreInfoDose').textContent.includes('1회 1~2정'), '공식 용법에서 1회 복용량을 읽는다');
+  assert.ok($('#coreInfoDose').textContent.includes('하루 3회'));
+  assert.equal($('#coreInfoStorage').textContent, '실온(1~30℃) 보관');
+  assert.ok($('#quickFacts').textContent.includes(complete.form), '제형이 요약 줄에 보인다');
+  // 요청 2/7/8: 3D는 정제/캡슐의 "도구" 카드로, 접힌 아코디언이 아니라 결과 화면에 바로 보인다.
+  assert.equal($('#pillToolCard').hidden, false, '실물크기 도구 카드가 결과 화면에 바로 보인다');
+  assert.ok($('#scene3d'), '3D 씬이 도구 카드 안에 있다');
+  assert.ok($('#sizeSummary').textContent.includes('mm'), '크기 자체는 핵심정보 카드에서도 보인다');
+  assert.equal($('#manualEntryDetails').open, false, '치수 직접 입력(고급 기능)은 기본적으로 접혀 있다');
+});
+
+test('맛 데이터가 없는 제품은 배지에 "등록된 맛 정보 없음"만 보여주고 임의로 맛을 만들지 않는다 (완료보고 테스트 6)', async t => {
+  const noFlavor = { ...complete, description: '흰색의 원형 필름코팅정', permit: null };
+  const { $, input, submit } = setup(t, async () => Response.json(payload([noFlavor])));
+  input('#query', '시험약'); await submit(); $('#results').children[0].click();
+  assert.equal($('#flavorBadge').hidden, false);
+  assert.equal($('#flavorChips').textContent, '등록된 맛 정보 없음');
 });
 
 test('검색 결과 카드는 제조사·모양/색상·장축×단축을 각각 별도 줄로 보여주고, 품목일련번호는 카드에 노출하지 않는다', async t => {
@@ -303,6 +394,15 @@ test('앱은 Home 화면으로 시작하고, 카드/하단 네비게이션으로
   assert.equal($('#screenHome').hidden, false);
 });
 
+test('홈의 "시럽·포 용량" 빠른 확인은 액체약 화면으로 바로 연결된다', async t => {
+  const { $ } = setup(t);
+  const chip = [...$('.quick-chip-row').children].find(b => b.textContent.includes('시럽·포 용량'));
+  assert.ok(chip, 'Home에 "시럽·포 용량" 빠른 확인이 있다');
+  chip.click();
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  assert.equal($('#liquidSearchWay').hidden, false, '기본은 액체약 검색 방식');
+});
+
 test('제품을 선택하면 모바일 단계가 검색에서 실물크기 결과로 넘어가고, 뒤로가기로 검색으로 돌아간다', async t => {
   const { $, input, submit } = setup(t);
   $('[data-mode="pill"]').click();
@@ -318,16 +418,14 @@ test('제품을 선택하면 모바일 단계가 검색에서 실물크기 결�
   assert.equal($('#screenHome').hidden, false);
 });
 
-test('상세정보와 치수 직접 입력은 접힌 아코디언 안에 있고, API 치수가 없으면 직접입력이 기본으로 펼쳐진다', async t => {
+test('제품 상세정보는 접힌 아코디언이 아니라 항상 보이고, 치수 직접 입력(고급 기능)만 접혀 있으며 API 치수가 없으면 기본으로 펼쳐진다', async t => {
   const { $, input, submit } = setup(t, async () => Response.json(payload([complete, missing])));
   input('#query', '시험약'); await submit();
   $('#results').children[0].click(); // complete: 치수 전부 있음
-  assert.equal($('#detailsAccordion').hidden, false);
-  assert.equal($('#detailsAccordion').open, false, '상세정보는 기본적으로 접혀 있어야 한다');
-  assert.equal($('#manualEntryDetails').open, false, '치수가 API로 채워졌으면 직접입력은 기본적으로 접힌다');
-  // Core identity facts stay fully present in the DOM (readable via textContent) even though the
-  // accordion around them starts closed - <details> without `open` never sets the `hidden`
-  // attribute, so this still holds exactly like before this screen was reorganized into accordions.
+  assert.equal($('#detailsAccordion').hidden, false, '제품 상세정보는 항상 보인다 (요청 8)');
+  assert.equal($('#manualEntryDetails').open, false, '치수가 API로 채워졌으면 직접입력(고급 기능)은 기본적으로 접힌다');
+  // Core identity facts stay fully present and directly visible, not tucked inside any hidden or
+  // collapsed section - the whole point of no longer wrapping product details in an accordion.
   assert.equal($('#identityFacts').closest('[hidden]'), null);
   $('#results').children[1].click(); // missing: THICK가 범위값이라 두께 없음
   assert.equal($('#manualEntryDetails').open, true, '치수가 불완전하면 직접입력을 눈에 띄게 펼쳐둔다');
@@ -371,13 +469,14 @@ test('3D 모델이 유일한 실물크기 화면이며, 옛 2D 탭/격자/앞뒤
   $('[data-mode="pill"]').click();
   assert.equal($('#view2d'), null); assert.equal($('#pill'), null); assert.equal($('#measure'), null);
   assert.equal($('[data-dim]'), null); assert.equal($('[data-view]'), null);
-  assert.equal($('#view3d').hidden, false, '3D 뷰는 항상 보인다');
-  // After selecting a real product.
+  // 요청 2: 검색 단계(3D 도구 카드가 아직 없는 상태)에서는 결과 화면 자체가 보이지 않는다.
+  assert.equal($('#resultView').hidden, true, '검색 단계에서는 결과 화면(3D 포함)이 보이지 않는다');
+  // After selecting a real product - the result step shows the tool card with the 3D view directly.
   input('#query', '시험약'); await submit(); $('#results button').click();
-  assert.equal($('#view2d'), null); assert.equal($('#view3d').hidden, false);
+  assert.equal($('#view2d'), null); assert.equal($('#resultView').hidden, false); assert.equal($('#scene3d').closest('[hidden]'), null);
   // After manual entry.
   $('#manual').click();
-  assert.equal($('#view2d'), null); assert.equal($('#view3d').hidden, false);
+  assert.equal($('#view2d'), null); assert.equal($('#resultView').hidden, false); assert.equal($('#scene3d').closest('[hidden]'), null);
   // The rotation slider and front/side/back shortcut buttons were removed; only drag/wheel/pinch (OrbitControls) remain.
   assert.equal($('#rotate3d'), null);
   assert.equal($('[data-orient]'), null);
@@ -403,22 +502,110 @@ test('3D 씬은 렌더러 로딩 여부와 무관하게 검색·선택·화면 �
   assert.ok($('#sizeSummary').textContent.includes('12 × 10 × 4 mm'));
 });
 
-test('처방전은 textarea 없이 항목별 단일 후보를 확정하고 검색으로 추가·수정·삭제한다', async t => {
-  const a = { ...complete, name: '텔미암정40/10mg' }, b = { ...complete, id: '124', name: '텔미암정40/5mg', long: 18 };
-  const { $, window, input, submit } = setup(t, async () => Response.json(payload([b, a])));
-  $('[data-mode="prescription"]').click(); assert.equal($('#prescriptionTool textarea'), null);
-  await window.eval("processRxNames(['텔미암 40/1O'])");
-  assert.equal($('#rxCandidates input').type, 'radio'); assert.equal($('#rxCandidates input').checked, false);
-  const checks = [...window.document.querySelectorAll('#rxCandidates input')];
-  checks[0].checked = true; checks[0].dispatchEvent(new window.Event('change')); $('#rxCandidates .flow-actions button').click();
-  assert.equal($('#rxSelectedList').children.length, 1); assert.ok($('#rxSelectedList').textContent.includes(a.name));
-  $('#rxAdd').click(); assert.equal($('#rxSearchContext').hidden, false); input('#query', '텔미암'); await submit(); $('#results button').click();
-  assert.equal($('#prescriptionTool').hidden, false); assert.equal($('#rxSelectedList').children.length, 2);
-  $('#rxSelectedList button').click(); assert.equal($('#resultName').textContent, a.name); assert.equal($('#pillTool').dataset.step, 'result');
-  $('[data-mode="prescription"]').click(); $('#rxSelectedList .flow-actions button:last-child').click(); assert.equal($('#rxSelectedList').children.length, 1);
-  $('#rxCandidates .flow-actions button:last-child').click(); input('#query', '텔미암'); await submit(); $('#results button').click();
-  assert.equal($('#rxSelectedList').children.length, 1, '같은 공식 품목은 중복 저장하지 않는다');
-  $('#rxClear').click(); assert.equal($('#rxCandidates').children.length, 0); assert.equal($('#rxSelectedList').children.length, 0);
+test('처방전 후보 선택·상세·제품 변경·삭제는 목록 다음 화면에서 동작한다', async t => {
+ const a = { ...complete, name: '텔미암정40/10mg' }, b = { ...complete, id: '124', name: '텔미암정40/5mg' };
+ const { $, window, input, submit } = setup(t, async () => Response.json(payload([b,a])));
+ await window.eval("processRxNames(['텔미암 40/1O'])");
+ assert.equal($('#rxCandidates'), null); assert.equal($('#rxSelectedList input'), null);
+ pickRx(window); assert.ok(window.__rxTest.getGroups()[0].chosen);
+ $('#rxDetailDialog .rx-action-size').click(); assert.equal($('#pillTool').dataset.step, 'result');
+ $('[data-mode="prescription"]').click(); $('#rxSelectedList .rx-row-button').click();
+ $('#rxDetailDialog .rx-action-product').click(); $('#rxDetailDialog .rx-product-search').click();
+ assert.equal($('#rxSearchContext').hidden, false); input('#query','텔미암'); await submit(); $('#results button').click();
+ assert.equal($('#rxSelectedList').children.length,1);
+ $('#rxSelectedList .rx-row-button').click(); $('#rxDetailDialog .rx-action-remove').click();
+ assert.equal($('#rxSelectedList').children.length,0); $('#rxClear').click(); assert.equal($('#rxSelectedSection').hidden,true);
+});
+
+test('약 직접 추가: 페이지 이동 없이 같은 화면 안에서 알약·액체 전체 제형을 검색하고, 복용정보를 입력해 처방 목록에 추가한다 (요청 6/7/8/9/10/28)', async t => {
+  const pill = { ...complete, id: '201', name: '세토펜정325mg' };
+  const liquid = { ...complete, id: '202', name: '세토펜현탁액', form: '현탁액', description: '경구용 현탁액', permit: { status: 'ok', data: { packaging: '15mL/포 × 20포' } } };
+  const schema = await import('../public/prescription-schema.js');
+  const calls = [];
+  const { $, window } = setup(t, async path => {
+    calls.push(path);
+    if (path.startsWith('/api/liquids')) return Response.json(payload([liquid], 1, 1));
+    return Response.json(payload([pill], 1, 1));
+  });
+  window.__rxTest.setMedSchema(schema);
+  $('[data-mode="prescription"]').click();
+  $('#rxAdd').click();
+  assert.equal($('#rxAddPanel').hidden, false, '패널이 같은 화면 안에서 열린다');
+  assert.equal($('#pillTool').classList.contains('hidden'), true, '알약 실물크기 검색 화면(pill screen)으로 이동하지 않는다 (요청 6)');
+  assert.equal($('#prescriptionTool').hidden, false);
+
+  $('#rxAddQuery').value = '세토펜';
+  $('#rxAddSearchForm').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle();
+  assert.ok(calls.some(p => p.startsWith('/api/medicines')) && calls.some(p => p.startsWith('/api/liquids')), '정제/캡슐뿐 아니라 액체약도 함께 검색한다 (요청 7)');
+  assert.equal($('#rxAddResults').children.length, 2, 'solid-oral로 걸러내지 않고 모든 제형을 보여준다');
+
+  // 액체 제품을 선택하면 공식 포장정보(15mL/포)를 기준으로 단위 추천·환산 힌트를 보여준다 (요청 9) -
+  // 포장이 "15mL/포 × 20포"로 낱개 포장 단위이므로 포를 기본 추천하고 1포=15mL 환산 힌트를 함께 보여준다.
+  const liquidButton = [...window.document.querySelectorAll('#rxAddResults button')].find(b => b.textContent.includes('세토펜현탁액'));
+  liquidButton.click();
+  assert.equal($('#rxAddDoseForm').hidden, false);
+  assert.equal($('#rxAddSelectedName').textContent, '세토펜현탁액');
+  assert.equal($('#rxAddDoseUnit').value, '포', '포장 단위가 포이므로 포를 기본 추천한다');
+  const unitOptions = [...window.document.querySelectorAll('#rxAddDoseUnit option')].map(o => o.value);
+  assert.deepEqual(unitOptions, ['mL', '포']);
+  assert.equal($('#rxAddPouchHint').hidden, false);
+  assert.ok($('#rxAddPouchHint').textContent.includes('15mL'), '1포 = 15mL 환산 힌트를 보여준다');
+  $('#rxAddDoseUnit').value = 'mL'; $('#rxAddDoseUnit').dispatchEvent(new window.Event('change'));
+  assert.equal($('#rxAddPouchHint').hidden, true, 'mL을 직접 선택하면 포 환산 힌트는 숨긴다');
+  $('#rxAddDoseUnit').value = '포'; $('#rxAddDoseUnit').dispatchEvent(new window.Event('change'));
+
+  $('#rxAddDoseAmount').value = '3.5'; $('#rxAddFrequency').value = '3'; $('#rxAddDuration').value = '5';
+  $('#rxAddConfirm').click(); await settle();
+
+  assert.equal($('#rxAddPanel').hidden, true, '추가 후 패널이 닫힌다');
+  assert.equal($('#rxSelectedList').children.length, 1);
+  assert.ok($('#rxSelectedList').textContent.includes('세토펜현탁액'));
+  $('#rxSelectedList .rx-row-button').click(); assert.ok($('#rxDetailDialog').textContent.includes('직접 추가한 처방')); $('#rxDetailDialog .rx-detail-close').click();
+  assert.equal(window.__rxTest.getGroups()[0].chosen.kind, 'liquid');
+  assert.equal(window.__rxTest.getGroups()[0].row.dosePerAdministration, 3.5);
+  assert.equal(window.__rxTest.getGroups()[0].row.doseUnit, '포');
+  assert.equal(window.__rxTest.getGroups()[0].row.frequencyPerDay, 3);
+  assert.equal(window.__rxTest.getGroups()[0].row.durationDays, 5);
+
+  // solid-oral 제품도 같은 패널에서 검색·추가할 수 있다 (요청 7) - 정/캡슐 단위를 추천한다.
+  $('#rxAdd').click();
+  $('#rxAddQuery').value = '세토펜';
+  $('#rxAddSearchForm').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle();
+  const pillButton = [...window.document.querySelectorAll('#rxAddResults button')].find(b => b.textContent.includes('세토펜정325mg'));
+  pillButton.click();
+  assert.equal($('#rxAddDoseUnit').value, '정');
+  $('#rxAddCancelDose').click();
+  assert.equal($('#rxAddDoseForm').hidden, true); assert.equal($('#rxAddResults').hidden, false);
+  $('#rxAddClose').click();
+  assert.equal($('#rxAddPanel').hidden, true);
+});
+
+// 실제 재현된 버그: 같은 품목(예: 캡슐 제품)이 낱알식별(/api/medicines, enrichMedicines로 성분·사용법까지
+// 채워짐)과 일반 허가정보(/api/liquids, 목록 조회에서는 항상 easy:'not_requested') 검색에 모두 걸리면,
+// 나중에 넣은 쪽이 이기는 병합 순서 때문에 더 얕은 허가정보 쪽이 낱알식별 데이터를 덮어써서 "약 직접
+// 추가"로 넣은 약의 용량 분석이 항상 "공식 정보가 없어요"로 보이고 있었다(에도스캡슐 등에서 실제 재현).
+test('약 직접 추가: 같은 품목이 두 검색 소스에 모두 있으면 성분·사용법이 채워진 낱알식별 데이터가 우선한다', async t => {
+  const thin = { id: '200402284', name: '에도스캡슐(에르도스테인)', company: '영일제약(주)', permit: { status: 'ok', data: {} }, easy: { status: 'not_requested', data: null } };
+  const rich = { ...complete, id: '200402284', name: '에도스캡슐(에르도스테인)', form: '경질캡슐제',
+    permit: { status: 'ok', data: { materials: '성분명 : 에르도스테인|분량 : 300|단위 : 밀리그램' } },
+    easy: { status: 'ok', data: { usage: '성인은 1회 1캡슐(300 mg)씩, 1일 2~3회 복용합니다.' } } };
+  const { $, window } = setup(t, async path => path.startsWith('/api/liquids') ? Response.json(payload([thin], 1, 1)) : Response.json(payload([rich], 1, 1)));
+  const schema = await import('../public/prescription-schema.js');
+  window.__rxTest.setMedSchema(schema);
+  $('[data-mode="prescription"]').click();
+  $('#rxAdd').click();
+  $('#rxAddQuery').value = '에도스';
+  $('#rxAddSearchForm').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle();
+  assert.equal($('#rxAddResults').children.length, 1, '같은 id는 하나로 합쳐진다');
+  [...window.document.querySelectorAll('#rxAddResults button')][0].click();
+  $('#rxAddDoseAmount').value = '1'; $('#rxAddFrequency').value = '2'; $('#rxAddDuration').value = '60';
+  $('#rxAddConfirm').click(); await settle();
+  const item = window.__rxTest.getGroups()[0].chosen.item;
+  assert.ok(item.easy?.data?.usage, '허가정보 쪽이 아니라 사용법이 채워진 낱알식별 데이터가 선택된다');
+  assert.equal(item.permit?.data?.materials, '성분명 : 에르도스테인|분량 : 300|단위 : 밀리그램');
 });
 
 test('일반 검색에서도 시럽 등 액체약은 알약 3D 화면이 아니라 액체 화면으로 이동한다', async t => {
@@ -435,32 +622,13 @@ test('일반 검색에서도 시럽 등 액체약은 알약 3D 화면이 아니�
   assert.equal($('#liquidName').textContent, '듀파락-이지시럽');
 });
 
-test('처방전 화면에는 자동 "선택한 약 크기 비교하기"/"처방약 크기 비교" 영역이 없고, 선택된 처방약 카드의 버튼은 제형에 맞는 화면으로 이동한다', async t => {
-  // Item A: prescription flow에서 자동 크기 비교 기능은 제거되었다 - 일반 검색/저장된 약의 수동 pill
-  // comparison(#storageCompareBtn 등)은 별개로 그대로 유지된다.
-  const pill = { ...complete, name: '텔미암정40/10mg' };
-  const liquidItem = { ...complete, form: '시럽제', id: '999', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
-  const { $, window } = setup(t, async path => {
-    const term = new URL(path, 'http://x').searchParams.get('item_name') || '';
-    return Response.json(payload(term.includes('듀파락') ? [liquidItem] : [pill], 1, 1));
-  });
-  assert.equal($('#rxCompare'), null, '자동 "선택한 약 크기 비교하기" 버튼이 없다');
-  assert.equal($('#rxComparison'), null, '"처방약 크기 비교" 영역이 없다');
-  await window.eval("processRxNames(['텔미암정40/10mg'])");
-  window.document.querySelector('#rxCandidates input').checked = true;
-  window.document.querySelector('#rxCandidates input').dispatchEvent(new window.Event('change'));
-  window.document.querySelector('#rxCandidates .flow-actions button').click();
-  await window.eval("processRxNames(['듀파락-이지시럽'])");
-  const groups = window.document.querySelectorAll('.rx-group');
-  const secondRadio = groups[groups.length - 1].querySelector('input');
-  secondRadio.checked = true; secondRadio.dispatchEvent(new window.Event('change'));
-  groups[groups.length - 1].querySelector('.flow-actions button').click();
-  assert.equal(window.__rxTest.getGroups().at(-1).chosen.kind, 'liquid');
-  // 각 선택 카드 자신의 CTA 버튼(size)이 제형에 맞는 화면으로 이동시킨다 - 액체는 알약 3D로 가지 않는다.
-  const liquidCard = [...$('#rxSelectedList').children].find(row => row.textContent.includes('듀파락'));
-  liquidCard.querySelector('.flow-actions button').click();
-  assert.equal($('#liquidTool').classList.contains('active'), true);
-  assert.equal($('#pillTool').classList.contains('hidden'), true);
+test('처방전 상세의 제형 기능은 기존 액제 화면으로 연결되고 목록에는 나타나지 않는다', async t => {
+ const item = { ...complete, form:'시럽제', name:'듀파락-이지시럽', permit:{status:'ok',data:{packaging:'15mL/포'}} };
+ const {window,$} = setup(t, async()=>Response.json(payload([item])));
+ await window.eval("processRxNames(['듀파락-이지시럽'])"); pickRx(window);
+ assert.equal($('#rxSelectedList .rx-action-size'),null);
+ $('#rxDetailDialog .rx-action-size').click();
+ assert.equal($('#liquidTool').classList.contains('active'),true); assert.equal($('#pillTool').classList.contains('hidden'),true);
 });
 
 test('OCR 후보 추출은 개인정보를 제외하고 약명·함량만 남긴다', t => {
@@ -487,8 +655,56 @@ test('액체약 공식 포장 용량·분율·맛/향을 표시하고 미제공 
   input('#customFraction', '40%'); assert.ok($('#fractionVolume').textContent.includes('8 mL'));
   input('#customFraction', '200%'); assert.ok($('#fractionError').textContent.includes('입력')); assert.ok($('#fractionVolume').textContent.includes('8 mL'));
   input('#liquidManualMl', '-5'); assert.ok(!$('#fractionVolume').textContent.includes('mL'));
-  assert.ok($('#liquidGuide').textContent.includes('대략적인 분할 위치를 확인하기 위한 시각적 가이드'));
+  assert.ok($('#liquidGuide').textContent.includes('정확한 용량은 계량도구를 사용해주세요'));
   assert.equal($('#cameraAdvanced').open, false);
+});
+
+test('시럽 검색: 맛 · 1회 복용량(mL) · 복용횟수 · 보관방법을 보여주고 알약 3D 모델은 표시하지 않는다 (완료보고 테스트 3)', async t => {
+  const syrup = { ...complete, form: '시럽제', name: '시험시럽', description: '딸기향의 시럽제',
+    easy: { status: 'ok', data: { usage: '만 12세 이상은 10 mL씩 복용하며, 1일 3회 복용합니다.', storage: '실온 보관' } },
+    permit: { status: 'ok', data: { packaging: '100mL/병', storage: '차광, 실온 보관' } } };
+  const { $, window, input } = setup(t, async () => Response.json(payload([syrup])));
+  window.__rxTest.setDoseCalc(realDoseCalc);
+  $('[data-mode="liquid"]').click(); input('#liquidQuery', '시험시럽');
+  $('#liquidSearch').dispatchEvent(new window.Event('submit')); await settle();
+  $('#liquidResults button').click();
+  assert.ok($('#liquidFlavor').textContent.includes('딸기향'), '맛/향을 보여준다');
+  assert.equal($('#liquidCoreInfoCard').hidden, false);
+  assert.ok($('#liquidCoreInfoDose').textContent.includes('1회 10mL'), '공식 용법에서 mL 복용량을 읽는다');
+  assert.ok($('#liquidCoreInfoDose').textContent.includes('하루 3회'), '복용횟수를 함께 보여준다');
+  assert.equal($('#liquidCoreInfoStorage').textContent, '차광, 실온 보관');
+  assert.equal($('#pillTool').classList.contains('hidden'), true, '알약 3D 모델(pill screen)은 표시되지 않는다');
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+});
+
+test('산제/포 제품 검색: 맛 · 복용방법을 보여주고 포 분할 가이드(기존 액체약 포/스틱 기능)로 연결하며, 알약 3D 모델은 표시하지 않는다 (완료보고 테스트 4)', async t => {
+  const powder = { id: '501', name: '시험산제', company: '시험제약', form: '산제', description: '흰색의 산제',
+    easy: { status: 'ok', data: { usage: '1회 1포씩 1일 3회 복용합니다.', storage: '실온 보관' } },
+    permit: { status: 'ok', data: { packaging: '1g/포 × 20포', storage: '실온 보관' } } };
+  const { $, input, submit } = setup(t, async () => Response.json(payload([powder], 1, 1)));
+  input('#query', '시험산제'); await submit();
+  $('#results').children[0].click();
+  await settle(); // loadLiquidPhoto()의 비동기 이미지 조회가 테스트 종료 후까지 남지 않게 정리한다
+  assert.equal($('#pillTool').classList.contains('hidden'), true, '알약 3D 모델은 표시되지 않는다');
+  assert.equal($('#liquidTool').classList.contains('active'), true, '기존 포/스틱 분할 가이드 화면으로 연결된다');
+  assert.equal($('#liquidGuide').hidden, false, '포 분할 가이드 영역이 보인다');
+  assert.ok($('#liquidFlavor').textContent.length > 0, '맛 정보 영역이 보인다(등록된 정보가 없으면 없음으로 표시)');
+  assert.equal($('#liquidCoreInfoCard').hidden, false);
+  assert.notEqual($('#liquidCoreInfoDose').textContent, '정보 없음', '복용방법 원문을 보여준다');
+});
+
+test('연고 검색: 사용방법 · 보관방법을 보여주고 알약 3D 모델은 표시하지 않는다 (완료보고 테스트 5)', async t => {
+  const ointment = { id: '502', name: '시험연고', company: '시험제약', description: '백색의 연고',
+    easy: { status: 'ok', data: { usage: '환부에 적당량을 1일 2~3회 바릅니다.', precautions: '눈 주위에는 사용하지 마십시오.', storage: '실온 보관' } } };
+  const { $, input, submit } = setup(t, async () => Response.json(payload([ointment], 1, 1)));
+  input('#query', '시험연고'); await submit();
+  $('#results').children[0].click();
+  assert.equal($('#pillTool').classList.contains('hidden'), true, '알약 3D 모델은 표시되지 않는다');
+  assert.equal($('#liquidTool').classList.contains('active'), false);
+  const dialogText = $('#medicineInfoDialog').textContent;
+  assert.ok(dialogText.includes('환부에 적당량을 1일 2~3회 바릅니다'), '사용방법을 보여준다');
+  assert.ok(dialogText.includes('실온 보관'), '보관방법을 보여준다');
+  assert.ok(dialogText.includes('눈 주위에는 사용하지 마십시오'), '주의사항을 보여준다');
 });
 
 test('액체약 새 검색 결과가 늦게 끝난 이전 요청으로 바뀌지 않는다', async t => {
@@ -516,8 +732,8 @@ test('공식 사진은 있지만 crop을 만들 수 없을 때 원본을 그대�
   // in loadLiquidPhoto()/renderPhotoOverlay() that blocks anything but 'pouch' (see the bottle tests
   // below) would otherwise silently no-op this call.
   await window.eval("applyContainerType('pouch', {id:'9',name:'시험시럽'})"); await settle();
-  // Crop (auto+override) failed, but a real photo exists: show it as-is, not the generic schematic.
-  assert.equal($('#liquidProductPhoto').hidden, false); assert.equal($('#liquidFallback').hidden, true);
+  // Crop (auto+override) failed, but a real photo exists: show it as-is.
+  assert.equal($('#liquidProductPhoto').hidden, false);
   assert.equal($('#liquidProductPhoto').src, onePixelPng);
   assert.ok($('#liquidImageStatus').textContent.includes('전체를 표시합니다'));
   assert.equal($('#usableAdjustment').hidden, false);
@@ -526,18 +742,21 @@ test('공식 사진은 있지만 crop을 만들 수 없을 때 원본을 그대�
   // Top-based: torn open at the top and drunk downward, so 1/3 sits 1/3 of the way DOWN FROM THE TOP.
   assert.equal($('#photoFractionLine').style.top, (6 + (94 - 6) * (1 / 3)) + '%');
   // A saved override rect degrades the same way when canvas still isn't available to draw it -
-  // still the real photo, never the schematic.
+  // still the real photo.
   window.fetch = async () => Response.json({ status: 'ok', id: '200502778', imageData: onePixelPng, source: '시험 출처' });
   await window.eval("applyContainerType('pouch', {id:'200502778',name:'백초시럽플러스'})"); await settle();
-  assert.equal($('#liquidProductPhoto').hidden, false); assert.equal($('#liquidFallback').hidden, true);
+  assert.equal($('#liquidProductPhoto').hidden, false);
+  // 공식 사진이 전혀 없으면(not_found) 참고용 도형·분할선·label을 절대 그리지 않는다 - "제품 사진이
+  // 없어요" 안내와 촬영/선택 버튼만 보여준다("허공에 뜬 1/2 label" 버그의 재발 방지).
   window.fetch = async () => Response.json({ status: 'not_found', id: '10' });
   await window.eval("applyContainerType('pouch', {id:'10',name:'사진없는시럽'})"); await settle();
-  assert.equal($('#liquidFallback').hidden, false); assert.ok($('#liquidImageStatus').textContent.includes('공식 포장 사진이 없어'));
-  // No official photo at all: offer the user's own photo as an alternative way into the fraction guide.
-  assert.equal($('#liquidUploadOwnPrompt').hidden, false);
+  assert.equal($('#liquidPhotoStage').hidden, true, '사진 영역 자체를 렌더링하지 않는다');
+  assert.equal($('#photoFractionLine').hidden, true, '분할선을 그리지 않는다');
+  assert.equal($('#liquidUploadOwnPrompt').hidden, false, '"제품 사진이 없어요" + 촬영/선택 버튼만 보여준다');
   window.fetch = async () => Response.json({ error: '다시 시도해주세요' }, { status: 502 });
   await window.eval("applyContainerType('pouch', {id:'11',name:'연결오류시럽'})"); await settle();
-  assert.equal($('#liquidFallback').hidden, true); assert.equal($('#liquidImageRetry').hidden, false);
+  assert.equal($('#liquidPhotoStage').hidden, true); assert.equal($('#photoFractionLine').hidden, true);
+  assert.equal($('#liquidImageRetry').hidden, false);
 });
 
 test('classifyContainerType은 공식 포장단위 문구로 포/병/판단불가를 구분한다', t => {
@@ -579,12 +798,17 @@ test('병 형태 제품은 분할선 기능을 제공하지 않고 계량도구�
   assert.equal($('#bottleCalculator').hidden, false); assert.equal($('#bottleNotice').hidden, true);
   // No image anywhere in the bottle calculator - a fraction line can never be drawn on a bottle photo.
   assert.equal($('#bottleCalculator').querySelector('img'), null);
-  input('#bottleVolumeSelect', '500'); $('[data-bottle-fraction="0.3333333333333333"]').click();
+  // 병 제품은 "1회 복용량이 전체의 몇 %"를 먼저 보여준다 - 절반을 먹으라는 뜻으로 보이는 분율 계산은
+  // 접힌 "분율로 확인하기" 안에서만 보조로 제공한다.
+  input('#bottleVolumeSelect', '500'); input('#bottleDoseMl', '5');
+  assert.equal($('#bottleDoseResult').textContent, '총 용량 500 mL 중 1회 복용량 5 mL → 전체의 1%');
+  assert.equal($('[data-bottle-fraction]').closest('details').open, false, '분율 선택은 기본적으로 접혀 있다');
+  $('[data-bottle-fraction="0.3333333333333333"]').click();
   // [총 용량] × [분율] = [계산된 용량] order, "약" only on a result that actually got rounded.
   assert.equal($('#bottleVolumeResult').textContent, '500 mL × 1/3 = 약 166.7 mL');
   $('[data-bottle-fraction="0.5"]').click();
   assert.equal($('#bottleVolumeResult').textContent, '500 mL × 1/2 = 250 mL');
-  assert.ok($('#bottleCalculator').textContent.includes('눈금이 있는 계량도구를 이용해 측정'));
+  assert.ok($('#bottleCalculator').textContent.includes('계량컵이나 경구용 주사기로 실제 용량을 확인하세요'));
 });
 
 test('포 제품에서 병 제품으로 바로 전환해도(새 검색 없이) 분율선이 남아있지 않는다', async t => {
@@ -666,7 +890,7 @@ test('포장 형태를 자동 확인하지 못해도 "검색 결과 없음"이 �
   assert.equal($('#containerTypeChoice').hidden, false);
   assert.equal($('#containerTypeProductName').textContent, '애매한시럽');
   assert.equal($('#containerTypeProductCompany').textContent, '애매제약');
-  assert.ok($('#containerTypeChoice').textContent.includes('포장 형태를 자동으로 확인하지 못했습니다'));
+  assert.ok($('#containerTypeChoice').textContent.includes('포장 형태를 확인해주세요'));
 });
 
 test('내 약 보관함: 검색 결과에서 저장·해제하고 localStorage에 itemSeq 기반 구조로 남긴다', async t => {
@@ -713,58 +937,33 @@ test('내 약 보관함 화면: 목록·삭제·2개 이상 선택 시 비교 �
   assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1')).length, 1);
 });
 
-test('처방전에서 확정한 약은 자동으로 저장되지 않고, [♡ 저장] 버튼을 눌러야만 내 약 보관함에 들어간다', async t => {
-  const a = { ...complete, name: '텔미암정40/10mg' };
-  const { $, window, input, submit } = setup(t, async () => Response.json(payload([a])));
-  await window.eval("processRxNames(['텔미암 40/10'])");
-  const radio = $('#rxCandidates input'); radio.checked = true; radio.dispatchEvent(new window.Event('change'));
-  $('#rxCandidates .flow-actions button').click();
-  assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1') || '[]').length, 0, '확정만으로는 저장되지 않는다');
-  const heart = $('#rxSelectedList .save-heart'); assert.ok(heart); heart.click();
-  const saved = JSON.parse(window.localStorage.getItem('savedMedicinesV1'));
-  assert.equal(saved.length, 1); assert.equal(saved[0].itemSeq, '123');
+test('처방약 확정은 자동 저장하지 않고 상세에서 보관함 저장을 제공한다', async t => {
+ const {window,$}=setup(t,async()=>Response.json(payload([{...complete,name:'시험캡슐'}])));
+ await window.eval("processRxNames(['시험캡슐'])"); pickRx(window);
+ assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1')||'[]').length,0);
+ $('#rxDetailDialog .save-heart').click(); assert.equal(JSON.parse(window.localStorage.getItem('savedMedicinesV1')).length,1);
 });
 
 // dose-calc.js는 pouch-crop.js와 같은 동적 import 패턴이라 이 테스트 하네스(disableJavaScriptFileLoading)
 // 에서는 항상 null이다 - 실제 계산/파싱 정확성은 test/dose-calc.test.js가 순수 함수로 직접 검증하고,
 // 여기서는 모듈이 없을 때도 절대 죽지 않고 "추가 정보가 필요합니다" 쪽으로 안전하게 빠지는지만 확인한다.
 // 실제 브라우저(동적 import 동작)에서의 범위 계산·bar 렌더링은 실행 후 스크린샷으로 별도 확인했다.
-test('처방 용량 분석: 처방전에서 용량을 읽지 못하면 간략 표시에 "읽지 못함"을 보여주고, 계산 모듈이 없을 때도 안전하게 안내만 한다', async t => {
-  const a = { ...complete, name: '텔미암정40/10mg' };
-  const { $, window } = setup(t, async () => Response.json(payload([a])));
-  await window.eval("processRxNames(['텔미암정40/10mg'])"); // rawText를 주지 않아 ocrDose가 없는 상태를 재현
-  await settle();
-  const radio = $('#rxCandidates input'); radio.checked = true; radio.dispatchEvent(new window.Event('change'));
-  $('#rxCandidates .flow-actions button').click();
-  assert.ok($('#rxSelectedList .rx-dose-summary').textContent.includes('처방전에서 읽지 못함'));
-  $('#rxSelectedList .flow-actions button:nth-child(2)').click(); // "용량 분석 보기"
-  await settle();
-  const panel = $('.rx-dose-detail');
-  assert.equal(panel.hidden, false);
-  assert.ok(panel.textContent.includes('추가 정보가 필요합니다'));
-  assert.ok(!/적정|부적정(?!\S*안|경우)|과량|안전한 처방|잘못된 처방/.test(panel.textContent), '단정적 표현이 없어야 한다');
+test('처방전 용량 누락은 상세에서 안내하며 비교 막대를 표시하지 않는다', async t => {
+ const {window,$}=setup(t); installRx(window,[dailyCapsule]);
+ window.__rxTest.getGroups()[0].row.frequencyPerDay=null;
+ $('#rxSelectedList .rx-row-button').click(); $('#rxDetailDialog .rx-action-analyze').click(); await settle();
+ assert.ok($('#rxDetailDialog').textContent.includes('확인해주세요')); assert.equal($('.rx-daily-bar'),null);
 });
 
-test('추출 결과(unified schema)를 먼저 표시하고 인식 수정은 원문을 보존하며 후보를 다시 검색한다', async t => {
-  const schema = await import('../public/prescription-schema.js');
-  const paths = [];
-  const { window, $ } = setup(t, async path => { paths.push(path); return Response.json(payload([])); });
-  window.__rxTest.setMedSchema(schema);
-  window.testRow = schema.clampMedication({
-    productCode: '644913501', rawName: '듀파락-이지시럽/15mL/포', drugName: '듀파락-이지시럽',
-    strengthOrPackage: '15mL/포', doseUnit: '포', dosePerAdministration: 1, frequencyPerDay: 3, durationDays: 10,
-    confidence: { productCode: .5, drugName: .5, dose: .95, frequency: .95, duration: .95 } // 낮은 confidence -> needsReview
-  });
-  await window.eval('processRxNames([window.testRow])');
-  assert.ok($('#rxCandidates').textContent.includes('1포 × 하루 3회 × 10일'));
-  assert.ok($('#rxCandidates').textContent.includes('⚠ 인식 결과를 확인해주세요'));
-  $('#rxCandidates button').click();
-  $('[name="drugName"]').value = '수정시럽'; $('[name="frequencyPerDay"]').value = '2';
-  $('.rx-recognition-editor').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle();
-  assert.ok($('#rxCandidates').textContent.includes('1포 × 하루 2회 × 10일'));
-  assert.equal(window.__rxTest.getGroups()[0].row.rawName, '듀파락-이지시럽/15mL/포');
-  assert.ok(paths.some(path => decodeURIComponent(path).includes('수정시럽')));
-  assert.equal(window.__rxTest.getGroups()[0].chosen, null);
+test('상세에서 처방 수치를 수정하면 원문과 공식 제품을 유지하며 취소는 변경하지 않는다', async t => {
+ const {window,$}=setup(t); installRx(window,[dailyCapsule]);
+ const group=window.__rxTest.getGroups()[0]; const original=group.row.rawName;
+ $('#rxSelectedList .rx-row-button').click(); $('#rxDetailDialog .rx-action-edit').click();
+ const form=$('.rx-prescription-editor'); form.querySelector('[name=frequencyPerDay]').value='3';
+ form.dispatchEvent(new window.Event('submit',{cancelable:true})); await settle();
+ assert.equal(group.row.frequencyPerDay,3);assert.equal(group.row.rawName,original);assert.equal(group.chosen.item.id,dailyCapsule.id);
+ $('#rxDetailDialog .rx-action-edit').click(); $('[name=frequencyPerDay]').value='5'; $('.rx-prescription-editor .rx-detail-actions button').click();
+ assert.equal(group.row.frequencyPerDay,3); assert.ok($('#rxSelectedList').textContent.includes('하루 3회'));
 });
 
 test('productCode 기반 MFDS 교차검증: 유일한 보험코드 일치 후보를 자동 선택한다', async t => {
@@ -778,25 +977,21 @@ test('productCode 기반 MFDS 교차검증: 유일한 보험코드 일치 후보
   window.__rxTest.setMedSchema(schema);
   window.testRow = schema.clampMedication({ productCode: '644913501', drugName: '가나다정', dosePerAdministration: 1, frequencyPerDay: 1, durationDays: 5, confidence: { productCode: .9, drugName: .9, dose: .9, frequency: .9, duration: .9 } });
   await window.eval('processRxNames([window.testRow])');
-  const labels = $('#rxCandidates').querySelectorAll('.rx-choice');
-  assert.equal(labels.length, 2);
+  $('#rxSelectedList .rx-row-button').click(); $('#rxDetailDialog .rx-action-product').click();
+  assert.equal($('#rxDetailDialog input:checked')?.value, '900');
   assert.equal(window.__rxTest.getGroups()[0].candidates[0].strongMatch, true);
   assert.equal(window.__rxTest.getGroups()[0].candidates[1].strongMatch, false);
   assert.equal($('#rxCandidates .rx-strong-match'), null, 'matching strategy는 일반 UI에 노출하지 않는다');
-  assert.equal($('#rxCandidates input:checked')?.value, '900');
   assert.equal(window.__rxTest.getGroups()[0].chosen.item.id, '900');
   assert.equal(window.__rxTest.getGroups()[0].matchingStatus, 'exact-code');
 });
 
-test('처방전 시럽은 알약 검색 장애에도 액체 후보를 선택하고 liquid 화면으로 이동한다', async t => {
-  const liquid = { ...complete, form: '시럽제', name: '듀파락-이지시럽', description: '경구용 시럽제', permit: { status: 'ok', data: { packaging: '15mL × 30포' } } };
-  const { window, $ } = setup(t, async path => path.startsWith('/api/medicines?') ? Response.json({ error: '실패' }, { status: 503 }) : Response.json(payload([liquid])));
-  await window.eval("processRxNames(['듀파락-이지시럽'])");
-  const radio = $('#rxCandidates input'); assert.ok(radio);
-  radio.checked = true; radio.dispatchEvent(new window.Event('change')); $('#rxCandidates .flow-actions button').click();
-  assert.equal(window.__rxTest.getGroups()[0].chosen.kind, 'liquid');
-  $('#rxSelectedList .flow-actions button').click();
-  assert.equal($('#liquidTool').classList.contains('active'), true); assert.equal($('#pillTool').classList.contains('hidden'), true);
+test('알약 API 장애에도 처방약 상세에서 액체 후보 선택과 가이드 이동이 가능하다', async t => {
+ const item={...complete,form:'시럽제',name:'듀파락-이지시럽',permit:{status:'ok',data:{packaging:'15mL/포'}}};
+ const {window,$}=setup(t,async path=>path.startsWith('/api/medicines?')?Response.json({error:'실패'},{status:503}):Response.json(payload([item])));
+ await window.eval("processRxNames(['듀파락-이지시럽'])"); pickRx(window);
+ assert.equal(window.__rxTest.getGroups()[0].chosen.kind,'liquid'); $('#rxDetailDialog .rx-action-size').click();
+ assert.equal($('#liquidTool').classList.contains('active'),true);assert.equal($('#pillTool').classList.contains('hidden'),true);
 });
 
 test('공식 단일 코드 자동 선택 후 처방 단위·CTA·저장 metadata를 연결한다', async t => {
@@ -807,9 +1002,10 @@ test('공식 단일 코드 자동 선택 후 처방 단위·CTA·저장 metadata
   window.med = schema.clampMedication({ productCode: '649401610', rawName: '에도스캡슐/1캡슐', drugName: '에도스캡슐', dosePerAdministration: 1, frequencyPerDay: 2, durationDays: 60 });
   await window.eval('processRxNames([window.med])');
   assert.equal(window.__rxTest.getGroups()[0].matchingStatus, 'exact-code');
-  assert.ok($('#rxCandidates').textContent.includes('1캡슐 × 하루 2회 × 60일'));
-  assert.equal($('.rx-product-cta').textContent, '실물크기 보기');
-  $('#rxSelectedList .save-heart').click();
+  assert.ok($('#rxSelectedList').textContent.includes('1캡슐 · 하루 2회 · 60일'));
+  $('#rxSelectedList .rx-row-button').click();
+  assert.equal($('#rxDetailDialog .rx-action-size').textContent, '실물 크기');
+  $('#rxDetailDialog .save-heart').click();
   const saved = JSON.parse(window.localStorage.getItem('savedMedicinesV1'))[0].metadata;
   assert.equal(saved.productCode, '649401610'); assert.equal(saved.medicineForm, 'solid-oral');
   assert.equal(saved.dosePerAdministration, 1); assert.equal(saved.frequencyPerDay, 2); assert.equal(saved.durationDays, 60);
@@ -823,11 +1019,11 @@ test('G: MFDS 전체 실패에도 OCR 네 행과 처방내용·수정 기능을 
   window.meds = ['듀파락-이지시럽', '에도스캡슐', '애니코프캡슐300mg', '셀벡스캡슐(내복)'].map((drugName, i) => schema.clampMedication({ drugName, dosePerAdministration: 1, doseUnit: i ? '캡슐' : '포', frequencyPerDay: i ? 2 : 3, durationDays: i ? 60 : 10 }));
   await window.eval('processRxNames(window.meds)');
   assert.equal(window.__rxTest.getGroups().length, 4);
-  assert.equal(window.document.querySelectorAll('.rx-group').length, 4);
-  assert.ok($('#rxCandidates').textContent.includes('1포 × 하루 3회 × 10일'));
-  assert.ok($('#rxCandidates').textContent.includes('공식 제품 확인이 필요합니다'));
-  assert.ok($('#rxCandidates').textContent.includes('제품 직접 선택'));
-  assert.ok($('#rxCandidates').textContent.includes('인식 내용 수정'));
+  assert.equal(window.document.querySelectorAll('.rx-document-row').length,4);
+  assert.ok($('#rxSelectedList').textContent.includes('1포 · 하루 3회 · 10일'));
+  assert.equal($('#rxSelectedList input'),null); assert.equal($('#rxSelectedList details'),null);
+  $('#rxSelectedList .rx-row-button').click(); $('#rxDetailDialog .rx-action-edit').click();
+  assert.ok($('.rx-prescription-editor'));
 });
 
 test('item 14: MFDS 검색이 응답 없이 멈춰도(hang) "공식 제품 후보를 찾고 있습니다…" 상태에 무한정 머무르지 않는다', async t => {
@@ -1033,8 +1229,7 @@ test('처방전 저장: 원본 이미지·OCR 전체 문장 없이 구조화된 
   });
   $('[data-mode="prescription"]').click();
   await window.eval("processRxNames(['에도스캡슐'])");
-  const radio = $('#rxCandidates input'); radio.checked = true; radio.dispatchEvent(new window.Event('change'));
-  $('#rxCandidates .flow-actions button').click();
+  pickRx(window); $('#rxDetailDialog .rx-detail-close').click();
   $('#rxSavePrescription').click(); await settle();
   assert.equal($('#rxSaveStatus').textContent, '처방전을 저장했습니다.');
   assert.equal(writes[0][0], 'prescriptions'); assert.equal(writes[0][1].label, '에도스캡슐'); assert.equal(writes[0][1].user_id, 'user-9');
@@ -1064,7 +1259,7 @@ test('저장된 처방전 목록·다시 보기: 목록을 열면 저장된 처�
   });
   window.__rxTest.setMedSchema(schema);
   $('[data-mode="prescription"]').click();
-  $('#rxRecent').open = true; $('#rxRecent').dispatchEvent(new window.Event('toggle')); await settle();
+  await settle();
   assert.ok($('#rxRecentList').textContent.includes('에도스캡슐'));
   $('#rxRecentList .flow-actions button').click(); await settle();
   assert.equal(window.__rxTest.getGroups().length, 1);
@@ -1102,47 +1297,88 @@ test('저장된 처방전 목록: 삭제하면 목록에서 사라진다', async
     return Response.json(payload());
   });
   $('[data-mode="prescription"]').click();
-  $('#rxRecent').open = true; $('#rxRecent').dispatchEvent(new window.Event('toggle')); await settle();
+  await settle();
   assert.ok($('#rxRecentList').textContent.includes('시험약'));
   $('#rxRecentList .flow-actions button:last-child').click(); await settle();
   assert.equal(deleted, true);
   assert.ok(!$('#rxRecentList').textContent.includes('시험약'));
 });
 
-test('DUR 블록: available/no-data/pending-or-unavailable/error 네 상태를 구분해 서로 다른 출처와 섞지 않는다', t => {
-  const { window } = setup(t);
-  window.eval(`
-    window.__durAvailable = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'available', data: [{ content: '1일 최대 용량을 초과하지 마십시오.' }] }, period: { status: 'no-data', data: [] } }); return p.textContent; })();
-    window.__durPending = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'pending-or-unavailable', data: [] }, period: { status: 'pending-or-unavailable', data: [] } }); return p.textContent; })();
-    window.__durError = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'error', data: [] }, period: { status: 'available', data: [] } }); return p.textContent; })();
-    window.__durNoData = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'no-data', data: [] } }); return p.textContent; })();
-  `);
-  assert.ok(window.__durAvailable.includes('1일 최대 용량을 초과하지 마십시오.'));
-  assert.ok(window.__durAvailable.includes('[DUR 안전사용 정보]'), '출처가 DUR로 명시되고 e약은요/허가정보와 섞이지 않는다');
-  assert.ok(window.__durAvailable.includes('참고정보이며'), 'DUR 데이터가 실제로 있을 때만 참고정보 안내문이 붙는다');
-  assert.ok(window.__durPending.includes('API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다'), '키가 잘못됐다고 단정하지 않는 문구를 그대로 보여준다');
-  assert.equal([...new Set(window.__durPending.match(/API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다/g))].length, 1, 'capacity/period가 같은 원인이면 메시지를 중복 출력하지 않는다');
-  assert.ok(window.__durError.includes('지금 불러오지 못했습니다'));
-  assert.ok(window.__durNoData.includes('DUR 정보가 없습니다'));
-  assert.ok(!window.__durPending.includes('참고정보이며'), '실제 데이터가 없으면 참고정보 안내문을 붙이지 않는다');
+// 실제 재현된 버그의 end-to-end 회귀: 에도스캡슐(에르도스테인) 처방 - 공식 용법·용량이 "1회 1캡슐
+// (300 mg)씩"처럼 정/캡슐 개수 뒤 괄호 안에 mg를 적는 문장이고, 허가사항 자체에 범위가 없는(정확히
+// 300mg) 고정 용량이라 "현재 정보만으로는 비교할 수 없습니다"로 끝나던 화면이 실제로 고쳐졌는지
+// 렌더링 결과로 확인한다(단위 함수만이 아니라).
+
+
+
+
+
+
+
+
+
+
+test('검색 null 항목·잘못된 캐시 데이터에도 화면을 유지하고 재시도할 수 있다', async t => {
+  let fail = true;
+  const { window, $, input, submit } = setup(t, async () => fail ? Response.json({ error: '일시 오류' }, { status: 503 }) : Response.json(payload([null, complete])));
+  window.localStorage.setItem('recentMedicines', '{"invalid":true}');
+  window.eval('renderRecents()');
+  input('#query', '시험약'); await submit();
+  assert.equal($('#results .empty-state button').textContent, '다시 시도');
+  fail = false; $('#results .empty-state button').click(); await settle();
+  assert.equal($('#results .result').textContent.includes('시험약'), true);
+  assert.equal($('#results').hasAttribute('aria-busy'), false);
 });
 
-test('DUR 투여기간주의: 조건 없는 "N일" 문구는 현재 처방 일수와 나란히 비교하고, 조건부 문구는 원문만 보여주고 자동 비교하지 않는다', t => {
-  const { window } = setup(t);
-  window.__rxTest.setDoseCalc(realDoseCalc);
-  window.eval(`
-    window.__durOver = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'available', data: [{ content: '10일 이상 연속으로 투여하지 않는다.', remark: '' }] } }, 14); return p.textContent; })();
-    window.__durWithin = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'available', data: [{ content: '10일 이상 연속으로 투여하지 않는다.', remark: '' }] } }, 5); return p.textContent; })();
-    window.__durConditional = (() => { const p = document.createElement('div'); renderDurBlock(p, { capacity: { status: 'no-data', data: [] }, period: { status: 'available', data: [{ content: '항암제 투여로 인한 구역 및 구토의 방지에 쓰는 제품에 한함', remark: '' }] } }, 14); return p.textContent; })();
-  `);
-  assert.ok(window.__durOver.includes('공식 DUR 투여기간주의: 10일'));
-  assert.ok(window.__durOver.includes('현재 처방: 14일'));
-  assert.ok(window.__durOver.includes('현재 처방기간이 DUR 투여기간주의 기준을 초과합니다.'));
-  assert.ok(!window.__durWithin.includes('초과합니다'), '기준 이내면 초과 문구를 붙이지 않는다');
-  assert.ok(window.__durWithin.includes('현재 처방: 5일'));
-  assert.ok(!window.__durConditional.includes('공식 DUR 투여기간주의:'), '조건부 문구는 숫자 비교를 하지 않는다');
-  assert.ok(window.__durConditional.includes('숫자로 자동 비교하지 않습니다'));
-  for (const text of [window.__durOver, window.__durWithin, window.__durConditional]) {
-    assert.ok(!/처방기간이\s*잘못|과도한\s*처방/.test(text), '단정적 표현을 쓰지 않는다');
-  }
+test('산제에 치수와 모양이 남아 있어도 알약 3D로 전환하지 않는다', async t => {
+  const powder = { ...complete, name: '시험산제', form: '산제', permit: { data: { packaging: '1g/포' } } };
+  const { window, $, input, submit } = setup(t, async () => Response.json(payload([powder])));
+  input('#query', '시험산제'); await submit(); $('#results .result').click();
+  assert.equal($('#pillTool').classList.contains('hidden'), true);
+  assert.equal($('#liquidTool').classList.contains('active'), true);
+  assert.equal(window.MedicineFlow.classifyMedicineForm(null), 'unknown');
+  assert.equal(window.MedicineFlow.classifyDisplayForm(undefined), 'other');
+});
+
+test('처방전 삭제 실패는 기록을 유지하고 사용자에게 오류를 알린다', async t => {
+  const { window, $ } = authedHome(t, async (url, init) => {
+    if (init?.method === 'DELETE') return Response.json({ message: 'unavailable' }, { status: 503 });
+    return Response.json([{ id: 'p1', label: '시험약', created_at: 'invalid-date' }]);
+  });
+  $('[data-mode="prescription"]').click(); await settle();
+  assert.ok($('#rxRecentList').textContent.includes('날짜 정보 없음'));
+  $('#rxRecentList .btn-danger').click(); await settle();
+  assert.ok($('#uiToast').textContent.includes('삭제하지 못했습니다'));
+  assert.ok($('#rxRecentList').textContent.includes('시험약'));
+  assert.equal($('#rxRecentList .btn-danger').disabled, false);
+});
+
+
+test('처방전 회귀: 네 줄 목록 → 한 약 상세 → 하루 용량 비교 → 상세 → 원래 목록', async t => {
+ const {window,$}=setup(t); installRx(window,Array.from({length:4},(_,i)=>({...dailyCapsule,id:String(i+1),name:i===1?dailyCapsule.name:'시험약 '+i})));
+ assert.equal($('#rxSelectedList').children.length,4); assert.equal($('#rxSelectedList details'),null); assert.equal($('#rxSelectedList .rx-action-analyze'),null);
+ window.document.querySelectorAll('#rxSelectedList .rx-row-button')[1].click();
+ assert.equal($('#rxDetailDialog .rx-detail-name').textContent.includes('에도스'),true);
+ $('#rxDetailDialog .rx-action-analyze').click(); await settle();
+ assert.equal($('.rx-daily-total').textContent,'600 mg/일');assert.ok($('.rx-daily-verdict.within'));
+ assert.equal($('.rx-daily-marker').style.left,'0%');assert.equal($('.rx-daily-evidence').open,false);
+ assert.ok($('.rx-daily-evidence').textContent.includes('300mg/캡슐'));
+ $('#rxDetailDialog .rx-detail-back').click(); assert.ok($('#rxDetailDialog .rx-action-edit'));
+ $('#rxDetailDialog .rx-detail-back').click(); assert.equal($('#rxDetailDialog').open,false); assert.equal($('#rxSelectedList').children.length,4);
+});
+
+test('하루 용량 비교 화면: 아래·경계·중간·위와 정확한 마커 좌표', async t => {
+ const {window,$}=setup(t);
+ for(const [amount,status,left] of [[.5,'below',0],[1,'within',0],[1.25,'within',50],[1.5,'within',100],[2,'above',100]]) {
+  installRx(window,[dailyCapsule],amount); $('#rxSelectedList .rx-row-button').click(); $('#rxDetailDialog .rx-action-analyze').click(); await settle();
+  assert.ok($('.rx-daily-verdict.'+status));assert.equal(parseFloat($('.rx-daily-marker').style.left),left);
+ }
+});
+
+test('공식 원문 있음·정보 없음·조회 실패를 구분하고 현재 하루 총량은 유지한다', async t => {
+ const {window,$}=setup(t,async()=>Response.json({error:'실패'},{status:503}));
+ for(const [usage,status,message] of [['초기 및 유지용량을 조절한다.','ok','자동 비교가 어려워요'],['','unmatched','공식 용법·용량 정보가 없어요'],['','error','공식 정보를 불러오지 못했어요']]) {
+  installRx(window,[{...dailyCapsule,easy:{status,data:{usage}}}]);$('#rxSelectedList .rx-row-button').click();$('#rxDetailDialog .rx-action-analyze').click();await settle();
+  assert.equal($('.rx-daily-total').textContent,'600 mg/일');assert.ok($('#rxDetailDialog').textContent.includes(message));assert.equal($('.rx-daily-bar'),null);
+ }
 });

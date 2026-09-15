@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import '../public/medicine-flow.js';
-const { normalizeMedicineName: norm, matchOfficialMedicine: match, classifyMedicineForm: form, classifyLiquidPackaging: pack, getMedicineDestination: destination, officialDoseUnit: unit } = globalThis.MedicineFlow;
+const { normalizeMedicineName: norm, matchOfficialMedicine: match, classifyMedicineForm: form, classifyLiquidPackaging: pack, getMedicineDestination: destination, officialDoseUnit: unit, classifyDisplayForm: displayForm } = globalThis.MedicineFlow;
 const syrup = { id: '1', name: '듀파락-이지시럽', insuranceCode: '644913501', form: '시럽제', permit: { data: { packaging: '15mL/포' } } };
 const capsule = { id: '2', name: '에도스캡슐', insuranceCode: '649401610', form: '경질캡슐' };
 test('A: exact EDI code → official match → liquid → liquid guide', () => {
@@ -73,3 +73,31 @@ test('mixed packs stay unknown; other liquid packs are distinguished', () => {
   assert.equal(unit(capsule), '캡슐'); assert.equal(unit({ name: '시험정', form: '정제' }), '정');
 });
 test('no official candidates yields not-found', () => assert.equal(match({ drugName: '시험정' }, []).status, 'not-found'));
+
+// --- classifyDisplayForm: 검색 결과 상세 화면용 5그룹(A~E) - classifyMedicineForm은 건드리지 않는다 ---
+test('classifyDisplayForm A: 정제/캡슐/연질캡슐은 tablet-capsule이다 (기존 solid-oral 판정 재사용)', () => {
+  assert.equal(displayForm(capsule), 'tablet-capsule');
+  assert.equal(displayForm({ name: '시험정', form: '필름코팅정' }), 'tablet-capsule');
+  assert.equal(displayForm({ name: '시험연질캡슐', form: '연질캡슐' }), 'tablet-capsule');
+});
+test('classifyDisplayForm B: 시럽/현탁액/내용액제는 syrup-liquid다', () => {
+  assert.equal(displayForm(syrup), 'syrup-liquid');
+  assert.equal(displayForm({ name: '시험현탁액', form: '현탁제' }), 'syrup-liquid');
+});
+test('classifyDisplayForm C: 산제/과립제/포/스틱은 powder-sachet이고, 치수·모양이 있어도 정제로 오분류하지 않는다', () => {
+  assert.equal(displayForm({ name: '시험산제', form: '산제' }), 'powder-sachet');
+  assert.equal(displayForm({ name: '시험과립', form: '과립제' }), 'powder-sachet');
+  // 낱알식별 데이터에 치수/모양이 남아있어도(오래된 기록) classifyMedicineForm의 solid-oral 폴백보다
+  // powder-sachet 판정이 우선한다.
+  assert.equal(displayForm({ name: '시험산제', form: '산제', shape: '원형', long: 5, short: 5 }), 'powder-sachet');
+});
+test('classifyDisplayForm D: 연고/크림/겔/외용액은 topical이다', () => {
+  assert.equal(displayForm({ name: '시험연고', description: '백색의 연고' }), 'topical');
+  assert.equal(displayForm({ name: '시험크림', description: '투명한 크림제' }), 'topical');
+  assert.equal(displayForm({ name: '시험겔', form: '겔제' }), 'topical');
+});
+test('classifyDisplayForm E: 주사제·좌제·패치 등 D에 속하지 않는 비경구 제형은 other(기타)다', () => {
+  assert.equal(displayForm({ name: '시험주사제', description: '무색 투명한 주사액' }), 'other');
+  assert.equal(displayForm({ name: '시험좌제', form: '좌제' }), 'other');
+  assert.equal(displayForm({ name: '시험제품' }), 'other', '분류 신호가 전혀 없으면 기타로 남는다');
+});

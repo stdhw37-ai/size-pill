@@ -1,0 +1,65 @@
+{
+  "retrievedAt": "2026-09-15",
+  "source": "Existing /api/medicines → MFDS e약은요",
+  "item": {
+    "id": "200402284",
+    "name": "에도스캡슐(에르도스테인)",
+    "company": "영일제약(주)",
+    "shape": "장방형",
+    "long": 19.1,
+    "short": 6.63,
+    "thick": 6.91,
+    "changed": "20221229",
+    "imageUrl": "https://nedrug.mfds.go.kr/pbp/cmn/itemImageDownload/1Og9J5dfY-O",
+    "colorFront": "초록",
+    "colorBack": "노랑",
+    "printFront": "YI Edos",
+    "printBack": "",
+    "lineFront": "",
+    "lineBack": "",
+    "description": "이 약은 백색의 분말이 들어있는 상부 초록색, 하부 미황색의 경질캡슐제이다.",
+    "form": "경질캡슐제, 산제",
+    "className": "진해거담제",
+    "classCode": "02220",
+    "medicineType": "일반의약품",
+    "englishName": "Edos Cap.",
+    "companyId": "19710014",
+    "permitDate": "20040507",
+    "imageDate": "20070122",
+    "markFront": "",
+    "markBack": "",
+    "markImageFront": "",
+    "markImageBack": "",
+    "markCodeFront": "",
+    "markCodeBack": "",
+    "insuranceCode": "649401610",
+    "businessNumber": "3018106847",
+    "standardCode": "8806494016105,8806494016112,8806494016129",
+    "dimensionsRaw": {
+      "long": "19.10",
+      "short": "6.63",
+      "thick": "6.91"
+    },
+    "permit": {
+      "status": "error",
+      "data": null
+    },
+    "easy": {
+      "status": "ok",
+      "data": {
+        "id": "200402284",
+        "name": "에도스캡슐(에르도스테인)",
+        "company": "영일제약(주)",
+        "efficacy": "이 약은 급ㆍ만성 호흡기질환에서의 점액용해 및 거담에 사용합니다.",
+        "usage": "성인은 1회 1캡슐(300 mg)씩, 1일 2~3회 복용합니다.\n\n급성 호흡기질환에 복용 시 연속으로 10일 이상 복용하지 않습니다.",
+        "warning": "",
+        "precautions": "이 약에 과민증 환자, 간경변, 시스타티오닌 합성효소 결핍, 소화성궤양, 중증 신장장애(크레아티닌청소율이\n\n이 약을 복용하기 전에 경증 및 중등도 간장애 환자, 황색5호 과민증 또는 알레르기 반응 경험자는 의사 또는 약사와 상담하십시오.",
+        "interactions": "기침약과 함께 복용 시 의사 또는 약사와 상의하십시오.",
+        "sideEffects": "두통, 감기, 호흡곤란, 미각이상, 구역, 구토, 설사, 상복부통, 복통, 속쓰림, 두드러기, 홍반, 습진 등이 나타날 수 있습니다.",
+        "storage": "실온에서 보관하십시오.\n\n어린이의 손이 닿지 않는 곳에 보관하십시오.",
+        "published": "20210129",
+        "updated": "2024-02-05"
+      }
+    }
+  }
+}

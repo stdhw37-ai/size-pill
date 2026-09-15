@@ -1,3 +1,23 @@
+// Shared feedback primitives; textContent keeps server messages out of HTML.
+let uiToastTimer;
+function showToast(message, tone = 'success') {
+  const toast = document.querySelector('#uiToast');
+  if (!toast) return;
+  clearTimeout(uiToastTimer); toast.textContent = message; toast.dataset.tone = tone; toast.hidden = false;
+  uiToastTimer = setTimeout(() => { toast.hidden = true; }, 5000);
+}
+function renderLoading(container) {
+  container.replaceChildren(); container.setAttribute('aria-busy', 'true');
+  const state = document.createElement('div'); state.className = 'loading-state'; state.setAttribute('aria-label', '정보를 불러오는 중'); state.setAttribute('role', 'status');
+  for (let i = 0; i < 2; i++) { const row = document.createElement('div'); row.className = 'skeleton'; row.setAttribute('aria-hidden', 'true'); state.append(row); }
+  container.append(state);
+}
+function renderEmpty(container, message, actionLabel, action) {
+  container.replaceChildren(); const state = document.createElement('div'); state.className = 'empty-state compact';
+  const copy = document.createElement('p'); copy.textContent = message; state.append(copy);
+  if (action) { const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-outline'; button.textContent = actionLabel; button.onclick = action; state.append(button); }
+  container.append(state);
+}
 const $ = selector => document.querySelector(selector);
 // Web/PWA: relative paths work because the Worker serves both the API and the static assets from
 // the same origin. A Capacitor-packaged native app has no same-origin backend - `window.Capacitor`
@@ -35,10 +55,12 @@ function applyCal(value) {
   if (btn) btn.textContent = valid ? '다시 보정' : '보정하기';
 }
 function number(el) { const n = Number(el.value); return el.value.trim() && Number.isFinite(n) && n > 0 && n <= 100 ? n : null; }
-// Prescription dose math/parsing (see dose-calc.js) - same dynamic-import pattern as pouch-crop.js
-// below, so a browser/test environment without it just skips dose analysis instead of failing.
-let doseCalc = null;
-import('./dose-calc.js').then(m => { doseCalc = m; }).catch(() => {});
+// Prescription dose math/parsing (see dose-calc.js) - lazy: it's only a prescription-flow feature,
+// so it has no business downloading on every page load (Home included). ensureDoseCalc() is called
+// once, the first time the prescription screen actually needs it; a browser/test environment
+// without it just skips dose analysis instead of failing either way.
+let doseCalc = null, doseCalcPromise = null;
+function ensureDoseCalc() { return doseCalcPromise ??= import('./dose-calc.js').then(m => { doseCalc = m; }).catch(() => {}); }
 // Login-first gate state (요청 2) - declared here, ahead of showScreen()'s definition, since it's a
 // `let` binding showScreen reads on every call; see initAuth()/openGate()/closeGate() near the bottom
 // of this file for the only things that change it. Patient dose-analysis fields now come from the
@@ -47,23 +69,28 @@ import('./dose-calc.js').then(m => { doseCalc = m; }).catch(() => {});
 let authGateOpen = true, authApi = null, authConfigData = null, authSession = null, currentProfile = null;
 let profileMode = 'onboarding', profileReturnMode = 'settings';
 let patientWeightKg = null, patientAgeYears = null;
-// The Three.js/OrbitControls scene loads asynchronously (real fetch in the browser); this stays
-// null in environments without it (e.g. the DOM test harness), and 2D keeps working regardless.
-let three3d = null;
-(async () => {
-  try {
-    const [THREE, controlsModule, geometryModule] = await Promise.all([
-      import('three'),
-      import('/vendor/three/examples/jsm/controls/OrbitControls.js'),
-      import('./tablet-geometry.js')
-    ]);
-    three3d = setupThree3D(THREE, controlsModule.OrbitControls, geometryModule);
-    render();
-    syncThreeVisibility();
-  } catch (err) {
-    console.warn('3D 모형을 불러오지 못했습니다.', err);
-  }
-})();
+// The Three.js/OrbitControls/tablet-geometry bundle is a real, non-trivial download - it has no
+// business loading on Home or any other screen that never shows a tablet. ensureThree3D() is
+// called once, the first time the pill screen is actually shown (see showScreen()); this stays
+// null until then (and in environments without it, e.g. the DOM test harness), and every caller
+// already goes through optional chaining (three3d?.update/show/hide) to tolerate that.
+let three3d = null, three3dPromise = null;
+function ensureThree3D() {
+  return three3dPromise ??= (async () => {
+    try {
+      const [THREE, controlsModule, geometryModule] = await Promise.all([
+        import('three'),
+        import('/vendor/three/examples/jsm/controls/OrbitControls.js'),
+        import('./tablet-geometry.js')
+      ]);
+      three3d = setupThree3D(THREE, controlsModule.OrbitControls, geometryModule);
+      render();
+      syncThreeVisibility();
+    } catch (err) {
+      console.warn('3D 모형을 불러오지 못했습니다.', err);
+    }
+  })();
+}
 function setupThree3D(THREE, OrbitControls, { buildTabletGeometry, classifyShape3D, paintCapsuleColors, colorToCss }) {
   const container = $('#scene3d');
   const FOV = 32;
@@ -255,6 +282,7 @@ function render() {
   three3d?.update(l, s, t);
 }
 function setManual() {
+  $('#pillTool').classList.remove('search-idle');
   selected = null;
   [longEl, shortEl, thickEl].forEach(el => el.readOnly = false);
   document.querySelectorAll('.shape').forEach(el => el.disabled = false);
@@ -267,6 +295,9 @@ function setManual() {
   if ($('#quickFacts')) $('#quickFacts').hidden = true;
   if ($('#quickPhotoBtn')) $('#quickPhotoBtn').hidden = true;
   if ($('#flavorBadge')) $('#flavorBadge').hidden = true;
+  // 직접 입력은 실제 제품이 아니라 3D 모형 확인 자체가 목적이므로, 검색 결과와 달리 핵심정보 카드는
+  // 숨기고 3D를 바로 펼쳐서 보여준다(요청 3의 "기본은 정보 카드 먼저"는 실제 검색 결과에만 적용).
+  if ($('#coreInfoCard')) $('#coreInfoCard').hidden = true;
   pillEngaged = true;
   setPillStep('result');
   render();
@@ -277,15 +308,35 @@ document.querySelectorAll('.shape').forEach(button => button.onclick = () => {
   shape = button.dataset.shape;
   document.querySelectorAll('.shape').forEach(el => el.classList.toggle('active', el === button)); render();
 });
+function infoCell(icon, label, value) {
+  const cell = document.createElement('div'); cell.className = 'info-cell';
+  const body = document.createElement('div'); body.className = 'info-body';
+  body.append(flowNode('span', label, 'info-label'), flowNode('span', value || '정보 없음'));
+  cell.append(flowNode('span', icon, 'info-ic'), body);
+  return cell;
+}
 function openMedicine(item, button, fetchedAt) {
+  if (!item || typeof item !== 'object') { showToast('제품 정보를 확인할 수 없습니다. 다시 검색해주세요.', 'error'); return; }
   const destination = MedicineFlow.getMedicineDestination(item);
   if (destination.screen === 'pill') { showScreen('pill'); selectMedicine(item, button, fetchedAt); return; }
   if (destination.screen === 'liquid') { showScreen('liquid'); $('#liquidWaySearch').click(); selectLiquid(item); return; }
+  // 산제/과립/포/스틱(요청 5)은 액체약과 같은 포/스틱 분할 가이드(사진 기반 fraction 기능)를 그대로
+  // 재사용한다 - 내용물이 액체인지 가루인지는 이 기능(사진에서 분할 위치 확인) 자체에 상관없다.
+  if (MedicineFlow.classifyDisplayForm(item) === 'powder-sachet') { showScreen('liquid'); $('#liquidWaySearch').click(); selectLiquid(item); return; }
   let dialog = $('#medicineInfoDialog');
   if (!dialog) { dialog = document.createElement('dialog'); dialog.id = 'medicineInfoDialog'; document.body.append(dialog); }
   dialog.replaceChildren(flowNode('h2', item.name || item.itemName), flowNode('p', item.company || item.entpName || '제조사 미제공'),
     flowNode('p', destination.medicineForm === 'unknown' ? '제품 유형 확인 필요 · 공식 제형 정보를 확인해주세요.' : '의약품 정보'),
     flowNode('p', `제형: ${MedicineFlow.formOf(item) || '미제공'}`), flowNode('p', MedicineFlow.packageOf(item)));
+  // 연고/크림/겔/외용제 등(요청 6): 알약 크기 UI 없이 사용방법/보관방법/주의사항을 e약은요 원문 그대로
+  // 보여준다 - "사용 부위"·"1회 사용량"처럼 식약처 데이터에 구조화된 필드가 없는 항목은 "정보 없음"으로
+  // 정직하게 남기고 추정하지 않는다.
+  const e = item.easy?.data;
+  const info = document.createElement('div'); info.className = 'summary-info-grid';
+  info.append(infoCell('📍', '사용부위', e?.applicationSite), infoCell('🥄', '사용량', e?.dose),
+    infoCell('📝', '사용방법', e?.usage), infoCell('📦', '보관방법', officialStorageText(item)));
+  dialog.append(info);
+  if (e?.precautions || e?.warning) dialog.append(flowNode('p', `주의사항: ${e.precautions || e.warning}`, 'tip'));
   const close = flowNode('button', '닫기'); close.type = 'button'; close.onclick = () => typeof dialog.close === 'function' ? dialog.close() : dialog.removeAttribute('open'); dialog.append(close);
   if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal(); else dialog.setAttribute('open', '');
 }
@@ -299,6 +350,7 @@ function savedMedicineSnapshot(entry) {
 }
 function selectMedicine(item, button, fetchedAt) {
   if (MedicineFlow.classifyMedicineForm(item) !== 'solid-oral') return openMedicine(item, button, fetchedAt);
+  $('#pillTool').classList.remove('search-idle');
   selected = item;
   [longEl, shortEl, thickEl].forEach((el, i) => { el.value = [item.long, item.short, item.thick][i] ?? ''; el.readOnly = true; });
   shape = item.shape === '원형' ? 'round' : item.shape === '장방형' ? 'capsule' : 'oval';
@@ -389,17 +441,51 @@ function buildFlavorInfo(item) {
   if (!labels.length) return null;
   return { taste: [...taste.values()], scent: [...scent.values()], labels, sourceType, sourceText };
 }
+// 맛/향은 검색 결과 핵심 요약에서 바로 보여야 한다(요청 7) - 정보가 없다고 배지를 숨기지 않고
+// "등록된 맛 정보 없음"이라고 명시한다. 절대 색상·코팅·성분 등에서 맛을 추정해 채우지 않는다 - 여기
+// 보여주는 값은 buildFlavorInfo가 공식 원문에서 문자 그대로 찾은 단어뿐이다.
 function showFlavorBadge(flavorInfo) {
   const badge = $('#flavorBadge'), chips = $('#flavorChips');
   if (!badge || !chips) return;
-  if (!flavorInfo) { badge.hidden = true; return; }
   chips.replaceChildren();
+  if (!flavorInfo) { chips.append(document.createTextNode('등록된 맛 정보 없음')); badge.hidden = false; return; }
   for (const label of flavorInfo.labels) {
     const chip = document.createElement('span'); chip.className = 'flavor-chip'; chip.textContent = label;
     if (flavorInfo.sourceText) chip.title = `${flavorInfo.sourceType}: ${flavorInfo.sourceText}`;
     chips.append(chip);
   }
   badge.hidden = false;
+}
+// 제품 자체의 공식 용법(e약은요) 요약 - 특정 처방의 실제 복용량이 아니라 "이 제품을 보통 이렇게 복용
+// 한다"는 라벨 정보다. 이미 만들어져 테스트된 doseCalc.parseOfficialDosage(순수 함수)를 그대로 재사용
+// 하고, 다시 구현하지 않는다. 신뢰 있게 읽히는 패턴이 없으면 억지로 숫자를 만들지 않고 null로 둔다.
+function officialDoseSummary(item) {
+  const usage = item.easy?.data?.usage || '';
+  if (!doseCalc || !usage) return { text: null, usage };
+  const o = doseCalc.parseOfficialDosage(usage);
+  const range = r => r ? `${r.min}${r.min !== r.max ? `~${r.max}` : ''}` : null;
+  let amount = null;
+  if (o.singleDoseTablets) amount = `1회 ${range(o.singleDoseTablets)}정`;
+  else if (o.singleDoseMl) amount = `1회 ${range(o.singleDoseMl)}mL`;
+  else if (o.singleDoseMg) amount = `1회 ${range(o.singleDoseMg)}mg`;
+  const freq = o.frequency ? `하루 ${range(o.frequency)}회` : null;
+  const text = [amount, freq].filter(Boolean).join(' · ') || null;
+  return { text, usage };
+}
+function officialStorageText(item) {
+  return item.permit?.data?.storage || item.easy?.data?.storage || null;
+}
+// 핵심정보 카드(요청 3/9) - 복용방법/보관방법을 3D보다 먼저 보여준다. "자세히 보기"는 기존
+// #detailsAccordion(의약품 상세정보 보기)을 그대로 펼친다 - 새 상세 화면을 따로 만들지 않는다.
+function renderCoreInfoCard(item) {
+  const card = $('#coreInfoCard'); if (!card) return;
+  const dose = officialDoseSummary(item);
+  $('#coreInfoDose').textContent = dose.text || (dose.usage ? dose.usage.split(/\n/)[0].slice(0, 60) : '정보 없음');
+  $('#coreInfoStorage').textContent = officialStorageText(item) || '정보 없음';
+  const more = $('#coreInfoMore');
+  more.hidden = false;
+  more.onclick = () => { $('#detailsAccordion').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  card.hidden = false;
 }
 function showIdentity(item) {
   $('#medicineDetails').hidden = false;
@@ -421,14 +507,16 @@ function showIdentity(item) {
   if (flavorInfo?.taste.length && flavorInfo.scent.length) rows.push(['맛', flavorInfo.taste.join(', ')], ['향', flavorInfo.scent.join(', ')]);
   else if (flavorInfo?.taste.length || flavorInfo?.scent.length) rows.push(['맛/향', flavorInfo.labels.join(', ')]);
   showFlavorBadge(flavorInfo);
+  renderCoreInfoCard(item);
   // A compact one-line summary next to the name, so shape/color/identifying marks are visible
   // without expanding anything. Flavor gets its own dedicated badge (showFlavorBadge above) instead
-  // of being folded into this line, since it's the one fact people scan for specifically.
+  // of being folded into this line, since it's the one fact people scan for specifically. 제형도
+  // 여기 포함한다(요청 3: 제품명 다음 줄에 제형/색상/모양).
   const quickFacts = $('#quickFacts');
   if (quickFacts) {
     const color = [item.colorFront, item.colorBack].filter(Boolean).join('/');
     const marks = [item.printFront && `앞 ${item.printFront}`, item.printBack && `뒤 ${item.printBack}`].filter(Boolean).join('/');
-    const bits = [item.shape, color, marks].filter(Boolean);
+    const bits = [MedicineFlow.dosageFormLabel(item), item.shape, color, marks].filter(Boolean);
     quickFacts.hidden = bits.length === 0;
     quickFacts.textContent = bits.join(' · ');
   }
@@ -467,32 +555,40 @@ function showSupplement(item) {
 // "최근 확인한 약" on the Home screen: purely a client-side convenience list (device-local
 // localStorage), not a new backend/API concept - re-selecting one just re-runs the existing
 // item_seq search path, so it reuses 100% of the current search/cache/select pipeline.
-function readRecents() { try { return JSON.parse(localStorage.getItem('recentMedicines')) || []; } catch { return []; } }
+function readRecents() { try { const rows = JSON.parse(localStorage.getItem('recentMedicines')); return Array.isArray(rows) ? rows.filter(row => row && row.id) : []; } catch { return []; } }
 function writeRecents(list) { try { localStorage.setItem('recentMedicines', JSON.stringify(list.slice(0, 8))); } catch { /* Recents are a convenience; failing to persist is not fatal. */ } }
 function pushRecent(item) {
   writeRecents([{ id: item.id, name: item.name, company: item.company }, ...readRecents().filter(r => r.id !== item.id)]);
   renderRecents();
 }
+const RECENT_PREVIEW = 3;
+let recentShowAll = false;
+// Compact vertical list, newest first, capped to 3 rows by default - a horizontal scroll carousel
+// hid most of the list off-screen and could cause layout overflow, and buried entries nobody would
+// scroll to find. "전체 보기" reveals the rest (up to the 8 kept in storage) in place.
 function renderRecents() {
-  const row = $('#recentRow'), section = $('#recentSection');
+  const row = $('#recentRow'), section = $('#recentSection'), showAllBtn = $('#recentShowAll');
   if (!row || !section) return;
   const list = readRecents();
   section.hidden = list.length === 0;
   row.replaceChildren();
-  for (const r of list) {
-    const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'recent-chip';
-    const name = document.createElement('b'); name.textContent = r.name;
-    const company = document.createElement('small'); company.textContent = r.company || '';
-    chip.append(name, company);
-    chip.onclick = () => openRecent(r.id);
-    row.append(chip);
+  const shown = recentShowAll ? list : list.slice(0, RECENT_PREVIEW);
+  for (const r of shown) {
+    const item = document.createElement('button'); item.type = 'button'; item.className = 'recent-item';
+    const copy = document.createElement('span'); copy.className = 'recent-copy';
+    copy.append(flowNode('b', r.name), flowNode('small', r.company || '제조사 미제공'));
+    item.append(copy, flowNode('span', '›', 'arrow'));
+    item.onclick = () => openRecent(r.id);
+    row.append(item);
   }
+  if (showAllBtn) showAllBtn.hidden = recentShowAll || list.length <= RECENT_PREVIEW;
 }
+$('#recentShowAll')?.addEventListener('click', () => { recentShowAll = true; renderRecents(); });
 async function openRecent(id) {
-  showScreen('pill'); setPillStep('search');
+  searchFormFilter = null; showScreen('pill'); setPillStep('search');
   query = { item_seq: String(id) }; page = 1;
   await search();
-  const first = $('#results button');
+  const first = $('#results button.result');
   if (first) first.click();
   else {
     try {
@@ -507,7 +603,7 @@ async function openRecent(id) {
 // `saved_medicines` table (itemSeq as the primary identifier, not the whole API response) so this
 // can move to a real account/Supabase backend later without a data migration; see savedEntryFor().
 const SAVED_KEY = 'savedMedicinesV1';
-function readSaved() { try { const list = JSON.parse(localStorage.getItem(SAVED_KEY)); return Array.isArray(list) ? list : []; } catch { return []; } }
+function readSaved() { try { const list = JSON.parse(localStorage.getItem(SAVED_KEY)); return Array.isArray(list) ? list.filter(entry => entry && entry.itemSeq) : []; } catch { return []; } }
 function writeSaved(list) { try { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); } catch { /* Saves are device-local; a full disk/private-mode failure just means nothing persists. */ } }
 function isSavedMedicine(itemSeq) { return readSaved().some(entry => entry.itemSeq === String(itemSeq)); }
 function savedEntryFor(item, kind, prescription) {
@@ -575,7 +671,7 @@ function renderStorageList() {
     const actions = flowNode('div', '', 'flow-actions');
     const view = flowNode('button', MedicineFlow.getMedicineDestination(savedMedicineSnapshot(entry)).cta); view.type = 'button';
     view.onclick = () => openSavedMedicine(entry);
-    const remove = flowNode('button', '삭제'); remove.type = 'button'; remove.onclick = () => unsaveMedicine(entry.itemSeq);
+    const remove = flowNode('button', '삭제', 'btn-danger'); remove.type = 'button'; remove.setAttribute('aria-label', `${entry.itemName || '의약품'} 삭제`); remove.onclick = () => unsaveMedicine(entry.itemSeq);
     actions.append(view, remove);
     card.append(checkbox, info, actions); container.append(card);
   }
@@ -597,10 +693,10 @@ async function openSavedMedicine(entry) {
     } catch { $('#liquidStatus').textContent = '저장된 제품 정보를 다시 불러오지 못했습니다.'; }
     return;
   }
-  showScreen('pill'); setPillStep('search');
+  searchFormFilter = null; showScreen('pill'); setPillStep('search');
   query = { item_seq: entry.itemSeq }; page = 1;
   await search();
-  $('#results button')?.click();
+  $('#results button.result')?.click();
 }
 $('#storageCompareBtn').onclick = () => {
   const entries = readSaved().filter(entry => storageCompareIds.has(entry.itemSeq) && MedicineFlow.classifyMedicineForm(savedMedicineSnapshot(entry)) === 'solid-oral');
@@ -625,21 +721,40 @@ $('#storageCompareBtn').onclick = () => {
 // the server-side pageNo/numOfRows paging (#prevPage/#nextPage) is unchanged.
 const REVEAL_STEP = 5;
 let revealedCount = 0, allResultItems = [];
+// 홈의 "빠른 확인" 칩은 별도의 검색 시스템이 아니라 같은 통합검색 결과의 필터일 뿐이다(요청 8) - null이면
+// 전체, 배열이면 MedicineFlow.classifyDisplayForm(item) 결과가 그 배열에 포함된 항목만 보여준다.
+let searchFormFilter = null;
+// 제형 배지(요청 1) - 정제/캡슐뿐 아니라 시럽·현탁액·산제·연고 등 통합검색 결과 전부에 붙는다.
+// dosageFormLabel(공식 원문 제형명)이 있으면 그대로 쓰고, 없을 때만 5그룹 분류의 일반 명칭으로
+// 대체한다 - 추정이 아니라 이미 공식 데이터에서 읽은 값을 우선한다.
+const DISPLAY_FORM_BADGE = { 'tablet-capsule': '정제', 'syrup-liquid': '시럽', 'powder-sachet': '산제', topical: '외용제', other: '기타' };
+function formBadgeLabel(item, displayForm) { return MedicineFlow.dosageFormLabel(item) || DISPLAY_FORM_BADGE[displayForm] || '기타'; }
 function renderRevealedResults() {
   const results = $('#results');
   for (let i = results.children.length; i < Math.min(revealedCount, allResultItems.length); i++) {
     const { item, fetchedAt } = allResultItems[i];
+    const displayForm = MedicineFlow.classifyDisplayForm(item);
     const button = document.createElement('button'); button.className = 'result'; button.type = 'button'; button.setAttribute('aria-pressed', String(selected?.id === item.id));
-    const title = document.createElement('b'); title.textContent = item.name;
+    const titleRow = document.createElement('span'); titleRow.className = 'result-title-row';
+    titleRow.append(flowNode('b', item.name), flowNode('span', formBadgeLabel(item, displayForm), 'badge'));
     const company = document.createElement('small'); company.className = 'r-meta'; company.textContent = item.company || '제조사 미제공';
     // Item_seq (품목일련번호) is intentionally left off this compact card - it's still available
-    // once selected, in the "추가 품목 정보 보기" accordion - so the card only carries what's needed
-    // to tell products apart at a glance: shape, color, and the long x short size.
-    const identity = document.createElement('small'); identity.className = 'r-meta';
-    identity.textContent = `${item.shape || '모양 미제공'} · ${item.colorFront || '색상 미제공'}${item.colorBack ? ' / ' + item.colorBack : ''}`;
-    const dims = document.createElement('small'); dims.className = 'r-meta';
-    dims.textContent = item.long && item.short ? `장축 × 단축 · ${item.long} × ${item.short} mm` : '치수 정보 부족';
-    const copy = document.createElement('span'); copy.className = 'result-copy'; copy.append(title, company, identity, dims);
+    // once selected, in the "추가 품목 정보 보기" accordion.
+    const copy = document.createElement('span'); copy.className = 'result-copy'; copy.append(titleRow, company);
+    if (displayForm === 'tablet-capsule') {
+      // 정제/캡슐만 모양·색상·치수를 보여준다 - 3D 실물크기 확인에 실제로 필요한 정보라서 그대로 둔다.
+      const identity = document.createElement('small'); identity.className = 'r-meta';
+      identity.textContent = `${item.shape || '모양 미제공'} · ${item.colorFront || '색상 미제공'}${item.colorBack ? ' / ' + item.colorBack : ''}`;
+      const dims = document.createElement('small'); dims.className = 'r-meta';
+      dims.textContent = item.long && item.short ? `장축 × 단축 · ${item.long} × ${item.short} mm` : '치수 정보 부족';
+      copy.append(identity, dims);
+    } else {
+      // 시럽/산제/외용제 등은 치수가 없다 - 대신 포장단위만 한 줄로 보여준다(요청 2: 제형에 맞지 않는
+      // 정보를 보여주지 않는다).
+      const packaging = document.createElement('small'); packaging.className = 'r-meta';
+      packaging.textContent = MedicineFlow.packageOf(item) ? `포장단위 · ${MedicineFlow.packageOf(item)}` : '포장단위 정보 없음';
+      copy.append(packaging);
+    }
     if (safeImage(item.imageUrl)) button.append(productImage(item.imageUrl, '', 'result-photo'));
     // The heart is an in-card overlay (not a sibling wrapper) so #results keeps exactly one direct
     // child per result - existing code/tests index #results.children[N] and click it directly.
@@ -664,18 +779,37 @@ $('#showMoreResults').onclick = () => { revealedCount += REVEAL_STEP; renderReve
 async function search(nextPage = 1) {
   controller?.abort(); controller = new AbortController(); const current = controller;
   $('#searchStatus').textContent = '의약품 정보를 찾고 있습니다…';
-  $('#results').replaceChildren(); $('#pagination').hidden = true; $('#showMoreResults').hidden = true;
+  renderLoading($('#results')); $('#pagination').hidden = true; $('#showMoreResults').hidden = true;
   allResultItems = []; revealedCount = 0;
   try {
-    const response = await fetch(API_BASE + '/api/medicines?' + new URLSearchParams({ ...query, pageNo: nextPage, numOfRows: 20 }), { signal: current.signal });
+    const params = new URLSearchParams({ ...query, pageNo: nextPage, numOfRows: 20 });
+    // 통합검색(요청 1/8) - 정제·캡슐뿐 아니라 시럽·현탁액·산제·연고 등 모든 제형이 한 검색에서 나오도록
+    // "약 직접 추가"(searchAddMedicine)가 이미 쓰는 두 공식 데이터소스를 함께 조회한다 - 검색 로직을
+    // 중복 구현하지 않는다. 페이지네이션/오류 상태는 계속 /api/medicines(낱알식별) 기준이고,
+    // /api/liquids(제품허가정보)는 실패해도 조용히 건너뛴다 - 있으면 보강되는 추가 데이터일 뿐이다.
+    const otherPromise = fetch(API_BASE + '/api/liquids?' + params, { signal: current.signal })
+      .then(r => r.ok ? r.json() : null).catch(() => null);
+    const response = await fetch(API_BASE + '/api/medicines?' + params, { signal: current.signal });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || '검색에 실패했습니다.');
+    if (!response.ok) throw new Error(data?.error || '검색에 실패했습니다.');
+    if (!data || typeof data !== 'object') throw new Error('검색 정보를 불러오지 못했습니다. 다시 시도해주세요.');
+    const otherData = await otherPromise;
     if (current !== controller) return;
     page = data.page;
-    $('#searchStatus').textContent = data.total ? `총 ${data.total}개 제품 · 제조사와 함량을 확인해주세요.` : '검색 결과가 없습니다. 제품명을 확인하거나 치수를 직접 입력해주세요.';
-    allResultItems = data.items.map(item => ({ item, fetchedAt: data.fetchedAt }));
+    const merged = new Map();
+    // 허가정보(otherData)를 먼저 넣고 낱알식별(data)로 덮어써서, 같은 품목이 두 소스에 모두 있으면
+    // 치수·모양이 있는 낱알식별 데이터가 우선한다.
+    if (otherData && Array.isArray(otherData.items)) for (const item of otherData.items) if (item && typeof item === 'object') merged.set(String(item.id), { item, fetchedAt: otherData.fetchedAt });
+    for (const item of (Array.isArray(data.items) ? data.items : [])) if (item && typeof item === 'object') merged.set(String(item.id), { item, fetchedAt: data.fetchedAt });
+    let combined = [...merged.values()];
+    // "빠른 확인" 칩에서 들어온 경우에만 결과를 좁힌다 - 별도 검색이 아니라 같은 결과의 필터일 뿐이다.
+    if (searchFormFilter) combined = combined.filter(({ item }) => searchFormFilter.includes(MedicineFlow.classifyDisplayForm(item)));
+    $('#searchStatus').textContent = combined.length ? `총 ${data.total}개 제품 · 제조사와 함량을 확인해주세요.` : '검색 결과가 없습니다. 제품명을 확인하거나 치수를 직접 입력해주세요.';
+    allResultItems = combined;
+    $('#results').replaceChildren();
     revealedCount = REVEAL_STEP;
     renderRevealedResults();
+    if (!allResultItems.length) renderEmpty($('#results'), '검색된 약이 없습니다. 포장에 적힌 제품명을 확인해주세요.', '검색어 다시 입력', () => $('#query').focus());
     $('#pagination').hidden = data.total <= data.pageSize;
     $('#prevPage').disabled = page <= 1; $('#nextPage').disabled = page * data.pageSize >= data.total || page >= 100;
     $('#pageLabel').textContent = `${page} / ${Math.ceil(data.total / data.pageSize)}`;
@@ -684,8 +818,9 @@ async function search(nextPage = 1) {
       $('#searchStatus').textContent = error instanceof TypeError ? '네트워크 연결을 확인해주세요.'
         : error instanceof SyntaxError ? '검색 서버에 연결되지 않았습니다. 앱 서버를 실행해주세요.'
         : error.message;
+      renderEmpty($('#results'), '약 정보를 가져오지 못했습니다.', '다시 시도', () => search(nextPage));
     }
-  }
+  } finally { if (current === controller) $('#results').removeAttribute('aria-busy'); }
 }
 $('#searchForm').onsubmit = event => {
   event.preventDefault();
@@ -729,25 +864,53 @@ previewCal(); applyCal(calibration?.scale || 1); render();
     if (profile) profile.hidden = mode !== 'profile';
     pillTool.classList.toggle('hidden', mode !== 'pill');
     liquidTool.classList.toggle('active', mode === 'liquid');
-    document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('active', x.dataset.mode === mode));
+    // Lazy-load heavy, screen-specific modules only once the screen that actually needs them is
+    // first shown (Phase 3 성능) - Home/설정/로그인/프로필 stay light. Each ensure*() is idempotent.
+    if (mode === 'pill') { ensureThree3D(); ensureDoseCalc(); }
+    if (mode === 'liquid') { ensureDoseCalc(); ensurePouchCrop(); }
+    if (mode === 'prescription') ensureDoseCalc();
+    document.querySelectorAll('[data-mode]').forEach(x => {
+      // "약 검색" 하단 nav는 pill/liquid/storage 화면 어디에 있든(제형에 따라 자동으로 갈리므로) 계속
+      // 활성으로 보인다 - 예전 "빠르게 보기" 중간 허브 화면은 제거했다.
+      const navMode = ['pill', 'liquid', 'storage'].includes(mode) ? 'pill' : mode === 'profile' ? 'settings' : mode;
+      const active = x.dataset.mode === (x.closest('nav') ? navMode : mode);
+      x.classList.toggle('active', active);
+      if (x.closest('nav') && active) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current');
+    });
     if (mode === 'pill') syncPillStep();
     syncThreeVisibility();
     window.scrollTo(0, 0);
   }
   // The 3D scene is the app's sole tablet viewer now (no 2D/3D tab to drive show()/hide() any more),
-  // so its render loop just follows whether the pill screen is actually on screen.
+  // so its render loop follows whether the pill screen is on screen AND whether the result step
+  // (where the 3D tool card actually lives in the DOM) is the one showing - the search step never
+  // renders the tool card at all, at any width.
   function syncThreeVisibility() {
     if (!three3d) return;
-    if (document.querySelector('#pillTool').classList.contains('hidden')) three3d.hide(); else three3d.show();
+    const onPillScreen = !document.querySelector('#pillTool').classList.contains('hidden');
+    const onResultStep = document.querySelector('#pillTool').dataset.step === 'result';
+    if (onPillScreen && onResultStep) three3d.show(); else three3d.hide();
   }
-  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => showScreen(b.dataset.mode));
+  // 홈/nav의 일반 "약 검색" 진입점은 항상 필터 없는 통합검색으로 리셋한다 - 두 "빠른 확인" 칩
+  // (크기 확인/맛·복용감)만 아래 별도 핸들러에서 searchFormFilter를 설정한 뒤 직접 showScreen을 부른다.
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (b.dataset.mode === 'pill') searchFormFilter = null; showScreen(b.dataset.mode); });
+  // 필터 칩은 항상 새 검색 단계에서 시작한다 - showScreen만 부르면 이전에 보고 있던 결과 화면으로
+  // 그대로 돌아가(syncPillStep의 "마지막 상태 복원") 방금 누른 필터가 적용된 새 검색인지 알기 어렵다.
+  $('#quickChipSize')?.addEventListener('click', () => { searchFormFilter = ['tablet-capsule']; showScreen('pill'); setPillStep('search'); });
+  $('#quickChipTaste')?.addEventListener('click', () => { searchFormFilter = ['tablet-capsule', 'syrup-liquid', 'powder-sachet']; showScreen('pill'); setPillStep('search'); });
 
-  // Mobile shows the pill tool as two full-screen steps (search results, then the size/result
-  // screen) instead of the side-by-side desktop layout; see the `#pillTool[data-step]` CSS rules.
-  // `smooth` requires a real layout engine (no-op/instant in the happy-dom test harness, which has
-  // no scrolling concept anyway) - selecting a product visibly glides to the result area instead of
-  // an abrupt jump, on both the mobile step-through view and the desktop 2-column view.
-  function setPillStep(step) { document.querySelector('#pillTool').dataset.step = step; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  // The pill tool always steps through search -> result (compact search bar + full-width result),
+  // at every screen width - see the `#pillTool[data-step]` CSS rules. `smooth` requires a real layout
+  // engine (no-op/instant in the happy-dom test harness, which has no scrolling concept anyway) - so
+  // selecting a product visibly glides to the result area instead of an abrupt jump.
+  function setPillStep(step) {
+    document.querySelector('#pillTool').dataset.step = step;
+    const result = step === 'result';
+    $('#searchBarFull').hidden = result; $('#searchPanel').hidden = result;
+    $('#searchBarCompact').hidden = !result; $('#resultView').hidden = !result;
+    syncThreeVisibility();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
   // Re-entering pill mode (Home card / bottom-nav tap) resumes the result screen only if the user
   // actually did something this session - NOT just because the manual-entry fields still hold their
   // non-empty placeholder example values (17.2/7.1), which would otherwise always look "engaged".
@@ -770,6 +933,8 @@ function closeGate() { authGateOpen = false; document.body.classList.remove('gat
 function renderProfileSummaries() {
   const parts = [];
   if (patientAgeYears != null) parts.push(`만 ${patientAgeYears}세`);
+  const sexLabel = { male: '남성', female: '여성' }[currentProfile?.sex];
+  if (sexLabel) parts.push(sexLabel);
   if (patientWeightKg != null) parts.push(`${patientWeightKg}kg`);
   const summaryText = parts.length ? parts.join(' · ') : '프로필에 나이·체중 정보가 없습니다.';
   const rxSummary = $('#rxProfileSummaryText'); if (rxSummary) rxSummary.textContent = summaryText;
@@ -801,13 +966,20 @@ function startOAuthLogin(providerId) {
   location.href = authApi.buildAuthorizeUrl(authConfigData, providerId, location.origin + location.pathname);
 }
 
+const SEX_LABEL = { male: '남성', female: '여성', prefer_not_to_say: '선택하지 않음' };
 function fillProfileForm(profile) {
   $('#profileBirthDate').value = profile?.birth_date || '';
   const sex = profile?.sex || 'prefer_not_to_say';
   document.querySelectorAll('#profileSexGroup [data-sex]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.sex === sex)));
   $('#profileWeight').value = profile?.weight_kg != null ? profile.weight_kg : '';
   $('#profileStatus').textContent = '';
+  // Read-mode summary (요청 13) - shown instead of the form when editing an existing profile, so the
+  // form's inputs are never on screen unless the person actually asked to change something.
+  $('#profileReadBirth').textContent = profile?.birth_date || '입력 필요';
+  $('#profileReadSex').textContent = SEX_LABEL[sex] || '선택하지 않음';
+  $('#profileReadWeight').textContent = profile?.weight_kg != null ? `${profile.weight_kg} kg` : '입력 필요';
 }
+function showProfileReadMode(show) { $('#profileReadView').hidden = !show; $('#profileForm').hidden = show; }
 function openProfileOnboarding() {
   profileMode = 'onboarding';
   $('#profileBackBtn').hidden = true;
@@ -815,17 +987,20 @@ function openProfileOnboarding() {
   $('#profileIntro').textContent = '처방 용량 분석(체중·연령 기준 비교)에 사용할 기본 정보입니다. 로그인한 계정에 저장되며, 값이 없어도 나머지 용량 분석은 그대로 동작합니다.';
   $('#profileSave').textContent = '저장하고 시작하기';
   fillProfileForm(null);
+  showProfileReadMode(false);
   openGate('profile');
 }
 function openProfileEditor(returnMode) {
   profileMode = 'edit'; profileReturnMode = returnMode;
   $('#profileBackBtn').hidden = false;
-  $('#profileTitle').textContent = '프로필 수정';
-  $('#profileIntro').textContent = '처방 용량 분석(체중·연령 기준 비교)에 사용할 정보를 수정합니다.';
-  $('#profileSave').textContent = '저장';
+  $('#profileTitle').textContent = '내 정보';
+  $('#profileIntro').textContent = '복용량 비교와 의약품 안내에 사용하는 기본 정보입니다.';
+  $('#profileSave').textContent = '변경사항 저장';
   fillProfileForm(currentProfile);
+  showProfileReadMode(true);
   showScreen('profile');
 }
+$('#profileEditToggle').onclick = () => showProfileReadMode(false);
 $('#profileBackBtn').onclick = () => showScreen(profileReturnMode);
 $('#settingsProfileRow').onclick = () => openProfileEditor('settings');
 $('#rxProfileEditBtn').onclick = () => openProfileEditor('prescription');
@@ -843,14 +1018,21 @@ $('#profileForm').onsubmit = async event => {
     weightKg = n;
   }
   const birthDate = $('#profileBirthDate').value || null;
+  if (birthDate && (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || birthDate > new Date().toISOString().slice(0, 10))) { $('#profileStatus').textContent = '생년월일을 다시 확인해주세요.'; $('#profileBirthDate').setAttribute('aria-invalid', 'true'); return; }
+  $('#profileBirthDate').removeAttribute('aria-invalid');
   const sex = document.querySelector('#profileSexGroup [aria-pressed="true"]')?.dataset.sex || 'prefer_not_to_say';
   if (!authApi || !authConfigData || !authSession) { $('#profileStatus').textContent = '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'; return; }
+  if ($('#profileSave').disabled) return;
+  $('#profileSave').disabled = true;
+  $('#profileStatus').dataset.tone = '';
   $('#profileStatus').textContent = '저장하는 중…';
   try {
     const saved = await authApi.saveProfile(authConfigData, authSession, { birthDate, sex, weightKg }, fetch);
     applyProfileToPatientFields(saved);
     if (profileMode === 'onboarding') closeGate(); else showScreen(profileReturnMode);
-  } catch { $('#profileStatus').textContent = '프로필을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'; }
+    showToast('✓ 저장되었습니다');
+  } catch { $('#profileStatus').dataset.tone = 'error'; $('#profileStatus').textContent = '프로필을 저장하지 못했습니다. 입력한 정보는 유지됩니다. 다시 저장해주세요.'; }
+  finally { $('#profileSave').disabled = false; }
 };
 $('#settingsLogoutRow').onclick = async () => {
   if (authApi) { try { await authApi.signOut(authConfigData, authSession, fetch, localStorage); } catch { /* local session is still cleared below regardless of a network error */ } }
@@ -978,8 +1160,9 @@ let FLOW_SEARCH_TIMEOUT_MS = 15000; // test-only seam - see __rxTest.setFlowSear
 async function flowSearch(path, term, signal, page = 1) {
   const response = await fetch(API_BASE + path + '?' + new URLSearchParams({ item_name: term, pageNo: page, numOfRows: 20 }), { signal: AbortSignal.any([signal, AbortSignal.timeout(FLOW_SEARCH_TIMEOUT_MS)]) });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || '검색에 실패했습니다.');
-  return data;
+  if (!response.ok) throw new Error(data?.error || '검색에 실패했습니다.');
+    if (!data || typeof data !== 'object') throw new Error('검색 정보를 불러오지 못했습니다. 다시 시도해주세요.');
+  return { ...data, items: Array.isArray(data.items) ? data.items.filter(item => item && typeof item === 'object') : [] };
 }
 let rxAbort = null, rxWorker = null, rxJob = 0, rxRequest = null, rxSelected = new Map();
 let rxGroups = [], rxGroupSerial = 0;
@@ -1017,224 +1200,233 @@ function renderPrescriptionDebug(debug, providerLabel) {
   }
   document.querySelector('#prescriptionTool')?.prepend(panel);
 }
+// One prescription document, one row per recognized drug. Detail is rendered only on demand.
+let rxDetailState = null, rxDetailRequest = 0, rxPrescriptionDate = null;
+let rxDailyCalc = null;
+async function ensureRxDailyCalc() { return rxDailyCalc ||= await import('./prescription-dose.js'); }
+function rxIngredient(item) {
+  return item?.permit?.data?.ingredients || item?.name?.match(/\(([^)]+)\)/)?.[1] || '성분 확인 필요';
+}
+function rxShortDose(group) {
+  const row = group?.row ? rxDisplayRow(group) : null;
+  if (!row) return '처방량 확인 필요';
+  return `${row.dosePerAdministration ?? '?'}${row.doseUnit || '단위 확인'} · 하루 ${row.frequencyPerDay ?? '?'}회 · ${row.durationDays ?? '?'}일`;
+}
 function updateRxSelection() {
   rxSelected.clear();
-  for (const group of rxGroups) if (group.chosen) rxSelected.set(group.chosen.item.id, group.chosen);
-  $('#rxSelectedSection').hidden = !rxSelected.size;
-  $('#rxSelectedTitle').textContent = `선택한 처방약 ${rxSelected.size}개`;
+  for (const group of rxGroups) if (group.chosen?.item) rxSelected.set(group.chosen.item.id, group.chosen);
+  const section = $('#rxSelectedSection'); section.hidden = !rxGroups.length;
+  $('#rxSelectedTitle').textContent = '처방약 확인';
+  const date = rxPrescriptionDate ? new Date(rxPrescriptionDate) : null;
+  $('#rxListMeta').textContent = `${rxGroups.length}개 의약품${date && Number.isFinite(date.getTime()) ? ' · ' + date.toLocaleDateString('ko-KR') : ''}`;
   const list = $('#rxSelectedList'); list.replaceChildren();
-  for (const { item, fetchedAt, kind } of rxSelected.values()) {
-    const group = rxGroups.find(g => g.chosen && g.chosen.item.id === item.id);
-    const row = flowNode('article', '', 'rx-selected-card'); row.id = `rxCard-${item.id}`;
-    row.append(flowNode('b', `✓ ${item.name}`), flowNode('p', item.company || '제조사 미제공'));
-    row.append(kind === 'liquid' ? flowNode('p', `액상 · ${item.permit?.data?.packaging || '포장단위 미제공'}`) : flowNode('p', medicineSize(item)));
-    if (kind !== 'liquid') row.append(flowNode('p', `${item.form || '제형 미제공'} · ${item.shape || '모양 미제공'} · ${[item.colorFront, item.colorBack].filter(Boolean).join(' / ') || '색상 미제공'}`));
-    row.append(flowNode('p', rxDoseSummaryLine(group), 'rx-dose-summary'));
-    const actions = flowNode('div', '', 'flow-actions');
-    const size = flowNode('button', MedicineFlow.getMedicineDestination(item).cta); size.type = 'button';
-    size.onclick = () => openMedicine(item, size, fetchedAt);
-    const analyze = flowNode('button', '용량 분석 보기'); analyze.type = 'button';
-    analyze.onclick = () => toggleRxDoseDetail(group, row, analyze);
-    const remove = flowNode('button', '삭제'); remove.type = 'button';
-    remove.onclick = () => { rxGroups.forEach(g => { if (g.chosen?.item.id === item.id) { g.chosen = null; renderRxGroup(g); } }); updateRxSelection(); };
-    // Confirming a prescription item never auto-saves it to 내 약 보관함 - this button is the only
-    // path from "처방전에서 찾은 약" into the separate, user-curated storage list (see item 8).
-    // Ordered before "삭제" so the destructive action stays last.
-    actions.append(size, analyze, makeSaveButton(item, kind, group?.row), remove); row.append(actions);
-    const detailPanel = flowNode('div', '', 'rx-dose-detail'); detailPanel.hidden = true; row.append(detailPanel); list.append(row);
+  rxGroups.forEach((group, index) => {
+    const item = group.chosen?.item;
+    const li = flowNode('li', '', 'rx-document-row');
+    const button = flowNode('button', '', 'rx-row-button'); button.type = 'button'; button.dataset.groupId = group.id;
+    button.id = `rxRow-${group.id}`;
+    button.append(flowNode('span', String(index + 1).padStart(2, '0'), 'rx-row-number'));
+    const copy = flowNode('span', '', 'rx-row-copy');
+    copy.append(flowNode('strong', item?.name || group.term || '이름 확인 필요', 'rx-row-name'));
+    copy.append(flowNode('span', `${rxIngredient(item)} · ${MedicineFlow.dosageFormLabel(item) || '제형 확인 필요'}`, 'rx-row-meta'));
+    copy.append(flowNode('span', rxShortDose(group), 'rx-row-dose'));
+    const confirmed = !!item && group.row && !group.row.needsReview && !!rxDisplayRow(group).doseUnit && [group.row.dosePerAdministration, group.row.frequencyPerDay, group.row.durationDays].every(n => Number.isFinite(n) && n > 0);
+    const status = confirmed ? '✓ 확인됨' : group.failed ? '조회 재시도' : '확인 필요';
+    copy.append(flowNode('span', status, 'rx-row-status'));
+    button.append(copy, flowNode('span', '›', 'rx-row-chevron')); button.onclick = () => openRxDetail(group);
+    li.append(button); list.append(li); group.el = li;
+  });
+}
+function rxButton(label, className, action) {
+  const button = flowNode('button', label, className); button.type = 'button'; button.onclick = action; return button;
+}
+function rxDialog() {
+  let dialog = $('#rxDetailDialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog'); dialog.id = 'rxDetailDialog'; dialog.setAttribute('aria-labelledby', 'rxDetailTitle');
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => { const id = rxDetailState?.group.id; rxDetailRequest++; rxDetailState = null; $(`#rxRow-${id}`)?.focus(); });
   }
-  syncSaveButtons();
+  return dialog;
 }
-// 섹션 11의 간략 표시 형식: "1회 ○○ · 1일 ○회", 계산 가능한 항목만 보여준다.
-function rxDoseSummaryLine(group) {
-  if (group?.row && medSchema) return medSchema.medicationSummary(rxDisplayRow(group));
-  if (!group?.ocrDose || !Number.isFinite(group.ocrDose.doseAmount)) return '처방 용량: 처방전에서 읽지 못함 - 아래 "용량 분석 보기"에서 직접 확인하세요.';
-  const { doseAmount, doseUnit, frequencyPerDay } = group.ocrDose;
-  const unitLabel = { tablet: '정', mL: 'mL', pack: '포' }[doseUnit] || '';
-  const parts = [`1회 ${doseAmount}${unitLabel}`];
-  if (Number.isFinite(frequencyPerDay)) parts.push(`1일 ${frequencyPerDay}회`);
-  return parts.join(' · ') + ' (처방전 인식 결과 - 아래 "용량 분석"에서 성분량·공식 허가용량과 비교)';
+function closeRxDetail() {
+  const dialog = $('#rxDetailDialog'); rxDetailRequest++;
+  if (dialog?.open) { if (typeof dialog.close === 'function') dialog.close(); else dialog.removeAttribute('open'); }
 }
-let rxDoseDetailOpen = new Set();
-function toggleRxDoseDetail(group, row, button) {
-  const panel = row.querySelector('.rx-dose-detail');
-  const opening = panel.hidden !== false; // hidden=true or never set -> opening now
-  if (!opening) { panel.hidden = true; button.textContent = '용량 분석 보기'; rxDoseDetailOpen.delete(group.id); return; }
-  button.textContent = '용량 분석 접기'; rxDoseDetailOpen.add(group.id);
-  renderRxDoseDetail(group);
+function openRxDetail(group, view = 'summary') {
+  if (!group || !rxGroups.includes(group)) return;
+  rxDetailState = { group, view }; rxDetailRequest++;
+  const dialog = rxDialog(); dialog.replaceChildren();
+  const head = flowNode('header', '', 'rx-detail-head');
+  const back = rxButton(view === 'summary' ? '← 처방약 목록' : '← 처방약 상세', 'rx-detail-back', () => view === 'summary' ? closeRxDetail() : openRxDetail(group));
+  const title = flowNode('h2', { summary: '처방약 상세', edit: '처방내용 수정', product: '제품 변경', dose: '용량 확인' }[view], 'rx-detail-title'); title.id = 'rxDetailTitle';
+  head.append(back, title, rxButton('닫기', 'rx-detail-close', closeRxDetail));
+  const body = flowNode('div', '', 'rx-detail-body'); dialog.append(head, body);
+  if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); } else dialog.setAttribute('open', '');
+  if (view === 'summary') renderRxSummary(body, group);
+  if (view === 'edit') editRxRecognition(group, body);
+  if (view === 'product') renderRxProducts(body, group);
+  if (view === 'dose') renderRxDaily(body, group, rxDetailRequest);
+  body.scrollTop = 0; back.focus();
 }
-// DUR(의약품안전사용서비스) 용량주의/투여기간주의는 성분/함량(허가정보)·사용법(e약은요)과 완전히 다른
-// 출처이므로 별도 온디맨드 조회로 분리한다(item.dur에 캐시 - item.easy와 같은 패턴). 실패해도 나머지
-// 용량 분석은 그대로 보여준다 - DUR은 참고 정보일 뿐 계산의 전제조건이 아니다.
-async function ensureDurData(item) {
-  if (item.dur) return item.dur;
+function renderRxSummary(body, group) {
+  const item = group.chosen?.item;
+  const name = rxButton(item?.name || group.term, 'rx-detail-name', () => {
+    if (!item) return openRxDetail(group, 'product');
+    closeRxDetail(); openMedicine(item, null, group.chosen.fetchedAt);
+  });
+  name.append(flowNode('span', ' ›')); body.append(name, flowNode('p', rxIngredient(item), 'rx-detail-muted'), flowNode('p', rxShortDose(group), 'rx-detail-prescription'));
+  const actions = flowNode('div', '', 'rx-detail-actions');
+  const dose = rxButton('용량 확인', 'btn-primary rx-action-analyze', () => openRxDetail(group, 'dose')); dose.disabled = !item;
+  actions.append(dose, rxButton('처방내용 수정', 'rx-action-edit', () => openRxDetail(group, 'edit'))); body.append(actions);
+  if (!item) body.append(flowNode('p', group.status || '공식 제품을 선택하면 용량과 제품 정보를 확인할 수 있어요.', 'rx-detail-muted'));
+  const product = flowNode('section', '', 'rx-detail-product'); product.append(flowNode('h3', '제품 정보'));
+  if (item) {
+    product.append(flowNode('p', `${MedicineFlow.dosageFormLabel(item) || '제형 확인 필요'} · ${item.company || '제조사 미제공'}`));
+    const details = document.createElement('details'); details.className = 'rx-official-text'; details.append(flowNode('summary', '공식 허가사항'));
+    details.append(flowNode('p', item.permit?.data?.materials || '성분 함량 정보가 없습니다.'));
+    details.append(flowNode('p', item.easy?.data?.usage || '공식 용법·용량은 용량 확인에서 조회할 수 있어요.'));
+    appendRxOfficialLinks(details, item); product.append(details);
+    const form = MedicineFlow.classifyDisplayForm(item);
+    const label = form === 'tablet-capsule' ? '실물 크기' : ['syrup-liquid', 'powder-sachet'].includes(form) ? '액제 가이드' : null;
+    if (label) product.append(rxButton(label, 'rx-action-size', () => { closeRxDetail(); openMedicine(item, null, group.chosen.fetchedAt); }));
+  }
+  product.append(rxButton('제품 변경', 'rx-action-product', () => openRxDetail(group, 'product'))); body.append(product);
+  const extra = document.createElement('details'); extra.className = 'rx-detail-more'; extra.append(flowNode('summary', '더 보기'));
+  extra.append(flowNode('p', group.source === 'manual' ? '직접 추가한 처방입니다.' : '처방전에서 확인한 내용입니다.'));
+  if (item) extra.append(makeSaveButton(item, group.chosen.kind, rxDisplayRow(group)));
+  extra.append(rxButton('이 처방에서 삭제', 'btn-danger rx-action-remove', () => {
+    group.request?.abort(); rxGroups = rxGroups.filter(g => g !== group); closeRxDetail(); updateRxSelection();
+  })); body.append(extra); syncSaveButtons();
+}
+function appendRxOfficialLinks(container, item) {
+  for (const [label, raw] of [['공식 허가문서 열기', item?.permit?.data?.officialDocUrl], ['공식 문서 열기', item?.permit?.data?.efficacyDocUrl]]) {
+    try { const url = new URL(raw); if (url.protocol !== 'https:' || url.hostname !== 'nedrug.mfds.go.kr') continue;
+      const a = flowNode('a', label); a.href = url.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; container.append(a);
+    } catch { /* Missing official link is not synthesized. */ }
+  }
+}
+function renderRxProducts(body, group) {
+  body.append(flowNode('h3', group.term), flowNode('p', group.status || '제품명·함량·제조사를 확인해주세요.', 'rx-detail-muted'));
+  let pending = null;
+  const candidates = flowNode('div', '', 'rx-product-options');
+  for (const entry of group.candidates || []) {
+    if (!entry?.item) continue;
+    const label = flowNode('label', '', 'rx-product-option'), radio = document.createElement('input');
+    radio.type = 'radio'; radio.name = `rx-product-${group.id}`; radio.value = entry.item.id; radio.checked = entry.item.id === group.chosen?.item.id;
+    const copy = flowNode('span', entry.item.name); copy.append(flowNode('small', entry.item.company || '제조사 미제공'));
+    radio.onchange = () => { pending = entry; confirm.disabled = false; }; label.append(radio, copy); candidates.append(label);
+  }
+  body.append(candidates);
+  const confirm = rxButton('이 제품 선택', 'btn-primary rx-product-confirm', () => {
+    if (!pending) return; group.chosen = pending; group.status = '✓ 공식 제품 확인됨'; updateRxSelection(); openRxDetail(group);
+  }); confirm.disabled = true; body.append(confirm);
+  body.append(rxButton('이름으로 다시 검색', 'rx-product-search', () => { closeRxDetail(); openRxSearch(group); }));
+  if (group.failed || !group.candidates?.length) body.append(rxButton('후보 다시 찾기', 'rx-product-retry', () => findRxCandidates(group)));
+}
+function editRxRecognition(group, body) {
+  group.request?.abort();
+  const row = group.row || { drugName: group.term };
+  const form = document.createElement('form'); form.className = 'rx-prescription-editor'; const controls = {};
+  for (const [key, title] of [['drugName', '약 이름'], ['dosePerAdministration', '1회량'], ['doseUnit', '단위'], ['frequencyPerDay', '하루 횟수'], ['durationDays', '처방일수']]) {
+    const label = flowNode('label', title, 'field'), input = document.createElement('input'); input.name = key; input.value = row[key] ?? '';
+    input.type = /drugName|doseUnit/.test(key) ? 'text' : 'number'; input.required = true;
+    if (input.type === 'number') { input.min = key === 'dosePerAdministration' ? '0.001' : '1'; input.step = key === 'dosePerAdministration' ? 'any' : '1'; input.inputMode = 'decimal'; }
+    controls[key] = input; label.append(input); form.append(label);
+  }
+  const status = flowNode('p'); status.setAttribute('role', 'status'); form.append(status);
+  const actions = flowNode('div', '', 'rx-detail-actions');
+  const save = flowNode('button', '저장', 'btn-primary'); save.type = 'submit';
+  actions.append(rxButton('취소', '', () => openRxDetail(group)), save); form.append(actions);
+  form.onsubmit = async event => {
+    event.preventDefault(); if (!form.reportValidity()) return;
+    const draft = Object.fromEntries(Object.entries(controls).map(([key, input]) => [key, input.type === 'number' ? Number(input.value) : input.value.trim()]));
+    if (!draft.drugName || !draft.doseUnit || ![draft.dosePerAdministration, draft.frequencyPerDay, draft.durationDays].every(n => Number.isFinite(n) && n > 0) || !Number.isInteger(draft.frequencyPerDay) || !Number.isInteger(draft.durationDays)) { status.textContent = '처방 내용을 다시 확인해주세요.'; return; }
+    const nameChanged = draft.drugName !== (row.drugName || group.term);
+    group.row = { ...row, ...draft, userConfirmed: true, needsReview: false, strengthOrPackage: `${draft.dosePerAdministration}${draft.doseUnit}` }; group.term = draft.drugName;
+    if (nameChanged) { group.ignoreOcrCode = true; group.chosen = null; group.candidates = []; }
+    updateRxSelection(); openRxDetail(group); showToast('처방내용을 수정했습니다. 목록에서 처방전을 저장해주세요.');
+    if (nameChanged) await findRxCandidates(group);
+  };
+  body.append(form);
+}
+function renderRxGroup(group) {
+  updateRxSelection();
+  if (rxDetailState?.group === group && ['summary', 'product'].includes(rxDetailState.view)) openRxDetail(group, rxDetailState.view);
+}
+function renderRxGroups() { updateRxSelection(); }
+const RX_DAILY_LABELS = { below: '공식 하루 용량 범위보다 적어요', within: '공식 하루 용량 범위예요', above: '공식 하루 용량 범위보다 많아요' };
+function rxNumber(value) { return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(value); }
+function renderDailyBar(reference, current, position) {
+  const box = flowNode('div', '', 'rx-daily-bar'); box.setAttribute('role', 'img');
+  box.setAttribute('aria-label', `공식 ${rxNumber(reference.min)}~${rxNumber(reference.max)} mg/일, 현재 ${rxNumber(current)} mg/일`);
+  const ends = flowNode('div', '', 'rx-daily-endpoints'); ends.append(flowNode('span', rxNumber(reference.min)), flowNode('span', rxNumber(reference.max)));
+  // Extend the axis for out-of-range values. Within the range this is exactly (current-min)/(max-min).
+  const track = flowNode('div', '', 'rx-daily-track'); const band = flowNode('span', '', 'rx-daily-band');
+  band.style.left = `${position.rangeStartPercent}%`; band.style.width = `${position.rangeEndPercent - position.rangeStartPercent}%`;
+  const marker = flowNode('span', '', 'rx-daily-marker'); marker.style.left = `${position.markerPercent}%`;
+  track.append(band, marker); ends.firstChild.style.left = `${position.rangeStartPercent}%`; ends.lastChild.style.left = `${position.rangeEndPercent}%`;
+  box.append(ends, track, flowNode('p', `현재 ${rxNumber(current)} mg/일`, 'rx-daily-current-label')); return box;
+}
+async function computeDoseAnalysis(group) {
+  const calc = await ensureRxDailyCalc(); const item = group.chosen?.item;
+  if (!item) return null;
+  // Retry the existing item lookup only when official enrichment is missing/failed. No new API.
+  if (!item.easy || ['not_requested', 'error'].includes(item.easy.status) || item.permit?.status === 'error') {
+    const path = group.chosen.kind === 'liquid' ? '/api/liquids' : '/api/medicines';
+    try {
+      const response = await fetch(API_BASE + path + '?' + new URLSearchParams({ item_seq: item.id }), { signal: AbortSignal.timeout(12000) });
+      const data = await response.json(); const fresh = data?.items?.find(i => String(i?.id) === String(item.id));
+      if (response.ok && fresh) { if (fresh.easy?.status === 'ok') item.easy = fresh.easy; if (fresh.permit?.status === 'ok') item.permit = fresh.permit; }
+    } catch { /* Current totals remain available; distinguish unavailable official data below. */ }
+  }
+  const analysis = calc.analyzePrescriptionDaily({ item, row: group.row ? rxDisplayRow(group) : null, kind: group.chosen.kind, ageYears: patientAgeYears, weightKg: patientWeightKg });
+  analysis.fetchFailed = !item.easy || ['not_requested', 'error'].includes(item.easy.status);
+  return analysis;
+}
+async function renderRxDaily(body, group, request) {
+  const item = group.chosen?.item; if (!item) return;
+  body.append(flowNode('h3', item.name), flowNode('p', rxIngredient(item), 'rx-detail-muted'));
+  const content = flowNode('div'); body.append(content); renderLoading(content);
   try {
-    const response = await fetch(API_BASE + '/api/dur?' + new URLSearchParams({ item_seq: item.id }));
-    const data = await response.json();
-    if (response.ok) item.dur = data;
-  } catch { /* DUR 조회 실패는 무시 - 아래에서 "지금 불러오지 못했습니다"로 안내한다. */ }
-  return item.dur || null;
-}
-// 출처를 절대 섞지 않는다(item 10/11): 용량주의/투여기간주의는 식약처 DUR, 성분·함량/일반 허가 용법·용량은
-// 의약품 허가사항, 사용법은 e약은요로 각각 명시한다. DUR 값을 referenceMgRange 같은 일반 허가용량 범위로
-// 절대 바꿔치기하지 않는다 - 이 함수는 dose-calc.js의 analyzeDose 결과를 전혀 참조하지 않는 완전히 별도
-// 경로다. currentDurationDays(처방전에서 읽은 총 투약일수)가 있고 DUR 투여기간주의 원문에서 "N일" 상한을
-// 조건 없이 신뢰 있게 뽑을 수 있을 때만(doseCalc.parseDurPeriodLimitDays) 두 숫자를 나란히 보여준다 - 그
-// 외에는 원문만 보여주고 자동 비교하지 않는다.
-function renderDurBlock(panel, dur, currentDurationDays) {
-  const section = flowNode('div', '', 'rx-dur');
-  section.append(flowNode('h4', '[DUR 안전사용 정보] 용량주의 · 투여기간주의'));
-  const categories = [{ key: 'capacity', label: '용량주의', result: dur?.capacity }, { key: 'period', label: '투여기간주의', result: dur?.period }];
-  const statusMessages = new Set();
-  let anyContent = false;
-  for (const { key, label, result } of categories) {
-    if (result?.status === 'available' && result.data.length) {
-      anyContent = true;
-      for (const entry of result.data) {
-        const box = flowNode('div', '', 'rx-dur-entry');
-        box.append(flowNode('p', `[${label}] ${entry.content || entry.mainIngredient || '내용 미제공'}`, 'tip danger'));
-        if (key === 'period' && doseCalc) {
-          const parsed = doseCalc.parseDurPeriodLimitDays(`${entry.content} ${entry.remark}`);
-          if (parsed.maxDays != null) {
-            box.append(flowNode('p', `공식 DUR 투여기간주의: ${parsed.maxDays}일`));
-            if (Number.isFinite(currentDurationDays)) {
-              box.append(flowNode('p', `현재 처방: ${currentDurationDays}일`));
-              if (currentDurationDays > parsed.maxDays) box.append(flowNode('p', '현재 처방기간이 DUR 투여기간주의 기준을 초과합니다.', 'rx-position'));
-            }
-          } else if (parsed.hasConditions) {
-            box.append(flowNode('p', '적응증·예외 조건이 포함된 문구여서 처방기간을 숫자로 자동 비교하지 않습니다 - 위 원문을 확인하세요.', 'tip'));
-          }
-        }
-        section.append(box);
-      }
-    } else if (result?.status === 'no-data') statusMessages.add(`[${label}] 이 제품에 등록된 DUR 정보가 없습니다.`);
-    else if (result?.status === 'pending-or-unavailable') statusMessages.add('DUR 안전사용 정보의 API 이용 승인이 아직 반영되지 않았거나 현재 조회할 수 없습니다.');
-    else statusMessages.add('DUR 정보를 지금 불러오지 못했습니다.');
-  }
-  for (const msg of statusMessages) section.append(flowNode('p', msg, 'tip'));
-  if (anyContent) section.append(flowNode('p', 'DUR 정보는 안전사용을 위한 참고정보이며, 환자의 상태와 적응증에 따라 실제 처방은 달라질 수 있습니다.', 'tip danger'));
-  section.append(flowNode('p', '출처: 식품의약품안전처 의약품안전사용서비스(DUR)', 'cal-note'));
-  panel.append(section);
-}
-async function renderRxDoseDetail(group) {
-  if (!group?.chosen || !rxDoseDetailOpen.has(group.id)) return;
-  const { item, kind } = group.chosen;
-  const row = $(`#rxCard-${item.id}`); if (!row) return;
-  const panel = row.querySelector('.rx-dose-detail'); panel.hidden = false;
-  panel.replaceChildren(flowNode('p', '용량을 계산하는 중…', 'tip'));
-  const [analysis, dur] = await Promise.all([computeDoseAnalysis(group), ensureDurData(item)]);
-  if (!rxDoseDetailOpen.has(group.id)) return; // collapsed while awaiting
-  panel.replaceChildren();
-  const flavor = buildFlavorInfo(item);
-  if (flavor) panel.append(flowNode('p', `맛/향: ${flavor.labels.join(', ')}`, 'cal-note'));
-  if (safeImage(item.imageUrl)) panel.append(productImage(item.imageUrl, `${item.name} 제품 사진`, 'result-photo'));
-  panel.append(flowNode('h4', '이번 처방'));
-  panel.append(flowNode('p', `처방 1회량: ${analysis?.ocr?.doseAmount ?? '?'}${{ tablet: kind === 'liquid' ? '' : '정', mL: 'mL', pack: '포' }[analysis?.ocr?.doseUnit] || ''}`, 'cal-note'));
-  // item 14: pouch count -> real dispensed volume (packaging arithmetic only, never an mg guess).
-  if (kind === 'liquid' && analysis?.ocr?.doseUnit === 'pack') {
-    const packaging = item.permit?.data?.packaging || '';
-    const mlPerPouch = mlPerPouchFromPackaging(packaging);
-    panel.append(flowNode('p', `포장 기준: ${packaging || '미제공'}`, 'cal-note'));
-    if (mlPerPouch && Number.isFinite(analysis.ocr.doseAmount)) {
-      panel.append(flowNode('p', `1회 실제 액체량: ${doseCalc.round1(mlPerPouch * analysis.ocr.doseAmount)}mL`, 'cal-note'));
-    }
-  }
-  if (!analysis || analysis.status === 'insufficient') {
-    panel.append(flowNode('p', '정확한 용량 비교를 위해 추가 정보가 필요합니다.', 'tip danger'));
-  } else {
-    panel.append(flowNode('h4', '[공식 허가 용법·용량] 성분별 계산 및 범위 비교'));
-    // 계산에 필요한 정보가 부족한 성분만 따로 짧게 보여준다 - 다성분제는 절대 총 mg으로 합치지 않는다
-    // (item 17). 계산 가능한 성분은 아래 analysis.comparisons 루프에서 한 블록에 전부 보여준다 - doseMg/
-    // dailyMg/mgPerKgDose까지 이미 그 안에 포함돼 있어(dose-calc.js analyzeDose 참고) 따로 순회하지 않는다.
-    for (const p of analysis.perIngredient) if (p.status !== 'ok') panel.append(flowNode('p', `${p.name}: 계산에 필요한 정보가 부족합니다.`, 'tip'));
-    const multi = analysis.perIngredient.length > 1;
+    const analysis = await computeDoseAnalysis(group);
+    if (request !== rxDetailRequest || !analysis) return;
+    content.replaceChildren(); content.removeAttribute('aria-busy');
     for (const c of analysis.comparisons) {
-      const box = flowNode('div', '', 'rx-dose-ingredient');
-      box.append(flowNode('b', multi ? c.name : '성분'));
-      box.append(flowNode('p', `계산된 1회 성분량: ${doseCalc.formatMg(c.doseMg)}`));
-      if (Number.isFinite(analysis.ocr.frequencyPerDay)) box.append(flowNode('p', `하루 총 성분량: 1일 ${analysis.ocr.frequencyPerDay}회 · ${doseCalc.formatMg(c.dailyMg)}`));
-      box.append(flowNode('p', c.mgPerKgDose != null
-        ? `체중 기준 용량: ${doseCalc.round1(c.mgPerKgDose)} mg/kg/회${c.mgPerKgDay != null ? ` · ${doseCalc.round1(c.mgPerKgDay)} mg/kg/day` : ''}`
-        : '체중 정보가 없어 mg/kg 기준과 비교할 수 없습니다.')); // item 8: 임의 체중을 추정하지 않는다.
-      if (c.range) {
-        box.append(flowNode('p', `공식 허가사항: ${c.range.min}${c.range.min !== c.range.max ? `~${c.range.max}` : ''} ${c.unit}`, 'rx-range-label'));
-        box.append(flowNode('p', `현재 처방: ${c.actual} ${c.unit}`));
-        if (c.position) box.append(rangeBar(c.range.min, c.range.max, c.actual, c.unit));
-      }
-      if (c.comparisonMessage) box.append(flowNode('p', c.comparisonMessage, 'rx-position'));
-      // item 6/J: 체중으로 환산한 절대 mg 범위 - mg/kg·mL/kg 기준으로 비교했을 때만(이미 c.range 자체가
-      // mg/회이면 같은 값을 반복하지 않는다).
-      if (c.referenceMgRange && patientWeightKg && /kg/.test(c.unit)) box.append(flowNode('p', `체중 ${patientWeightKg}kg 기준 허가사항 범위: ${c.referenceMgRange.min}~${c.referenceMgRange.max} mg/회`));
-      if (c.referenceMlRange) {
-        // item 6/K/7: 액체약은 제품 농도로 mL 환산, 상한에 해당하는 실제 양과 "차이"만 중립적으로 보여준다
-        // - "더 먹어도 됨"/"늘릴 수 있음" 같은 표현은 절대 쓰지 않는다.
-        box.append(flowNode('p', `제품 농도로 환산: 약 ${doseCalc.round1(c.referenceMlRange.min)}~${doseCalc.round1(c.referenceMlRange.max)} mL/회`));
-        box.append(flowNode('p', `허가사항 기준 1회 상한에 해당하는 양: 약 ${doseCalc.round1(c.referenceMlRange.max)} mL/회`));
-        if (c.gapToReferenceMaxMl != null) box.append(flowNode('p', `현재 처방과 허가사항 기준 상한의 차이: 약 ${c.gapToReferenceMaxMl} mL`));
-      } else if (c.referenceUnitRange) {
-        // item 7: 정제/캡슐은 공식 함량으로 이론적 정 수 범위만 참고로 보여준다 - 분할을 권하지 않는다.
-        box.append(flowNode('p', `제품 단위로 환산(참고용): 약 ${doseCalc.round1(c.referenceUnitRange.min)}~${doseCalc.round1(c.referenceUnitRange.max)} 정·캡슐/회 - 분할 복용을 권장하는 것은 아닙니다.`));
-        if (c.gapToReferenceMaxMg != null) box.append(flowNode('p', `현재 처방과 허가사항 기준 상한(mg)의 차이: 약 ${c.gapToReferenceMaxMg} mg`));
-      }
-      if (c.dailyReferenceMaxMg != null) box.append(flowNode('p', `체중 기준 허가사항 1일 최대: ${c.dailyReferenceMaxMg} mg/day${c.dailyReferenceMaxMl != null ? ` · 약 ${c.dailyReferenceMaxMl} mL/day` : ''}`));
-      panel.append(box);
+      const section = flowNode('section', '', 'rx-daily-comparison');
+      if (analysis.comparisons.length > 1) section.append(flowNode('h4', c.name));
+      section.append(flowNode('p', '하루 처방량', 'rx-detail-muted'), flowNode('strong', c.current == null ? '계산에 필요한 정보를 확인해주세요' : `${rxNumber(c.current)} mg/일`, 'rx-daily-total'));
+      section.append(flowNode('h4', '공식 하루 용량'));
+      if (c.reference) {
+        if (c.reference.min === c.reference.max) section.append(flowNode('p', `${rxNumber(c.reference.min)} mg/일`, 'rx-daily-fixed'));
+        else section.append(renderDailyBar(c.reference, c.current, c.position));
+        section.append(flowNode('p', RX_DAILY_LABELS[c.position.status], `rx-daily-verdict ${c.position.status}`));
+        if (c.position.status === 'within' && c.position.fraction != null) section.append(flowNode('p', `하루 공식 범위의 ${c.position.fraction <= .2 ? '하단' : c.position.fraction >= .8 ? '상단' : '중간'}에 해당해요.`, 'rx-detail-muted'));
+      } else section.append(flowNode('p', analysis.fetchFailed ? '공식 정보를 불러오지 못했어요' : analysis.official.status === 'missing' ? '공식 용법·용량 정보가 없어요' : '자동 비교가 어려워요', 'rx-daily-verdict'));
+      content.append(section);
     }
-  }
-  if (analysis?.usageText) {
-    panel.append(flowNode('h4', '공식 투여 정보'));
-    if (analysis.official.frequency) panel.append(flowNode('p', `공식 1일 투여횟수: ${analysis.official.frequency.min}${analysis.official.frequency.min !== analysis.official.frequency.max ? `~${analysis.official.frequency.max}` : ''}회${Number.isFinite(analysis.ocr?.frequencyPerDay) ? ` · 처방: 1일 ${analysis.ocr.frequencyPerDay}회` : ''}`));
-    if (analysis.official.maxFrequencyPerDay) panel.append(flowNode('p', `공식 1일 최대 투여횟수: ${analysis.official.maxFrequencyPerDay}회`));
-    if (analysis.official.intervalHours) panel.append(flowNode('p', `공식 투여 간격: ${analysis.official.intervalHours.min}${analysis.official.intervalHours.min !== analysis.official.intervalHours.max ? `~${analysis.official.intervalHours.max}` : ''}시간마다 (처방전에 정확한 복용 시각이 없으면 실제 간격은 확인할 수 없습니다)`));
-    const maxParts = [];
-    if (analysis.official.dailyMaxMgPerKg) maxParts.push(`${analysis.official.dailyMaxMgPerKg} mg/kg/day`);
-    if (analysis.official.dailyMaxMg) maxParts.push(`${analysis.official.dailyMaxMg} mg/day`);
-    if (analysis.official.dailyMaxMl) maxParts.push(`${analysis.official.dailyMaxMl} mL/day`);
-    if (analysis.official.dailyMaxTablets) maxParts.push(`${analysis.official.dailyMaxTablets}정/day`);
-    if (maxParts.length) panel.append(flowNode('p', `공식 1일 최대: ${maxParts.join(' · ')}`));
-  }
-  // item 3/9/10: 원문은 접어두고, 출처별로 절대 섞지 않는다 - 성분/함량(제품허가정보)과 사용법(e약은요)은
-  // 서로 다른 API 응답이므로 각 문단 앞에 어느 출처인지 명시한다.
-  if (analysis?.usageText || item.permit?.data?.materials) {
-    const details = flowNode('details', '', 'guide-options'); details.append(flowNode('summary', '공식 허가사항 원문 보기'));
-    if (item.permit?.data?.materials) details.append(flowNode('p', `[제품허가정보 · 원료성분 원문] ${item.permit.data.materials}`));
-    if (analysis?.usageText) details.append(flowNode('p', `[e약은요 · 사용법 원문] ${analysis.usageText}`));
-    for (const [label, href] of [
-      ['식품의약품안전처 첨부문서 전체(공식 허가사항 원문 PDF)', item.permit?.data?.officialDocUrl],
-      ['효능효과·용법용량 문서(PDF)', item.permit?.data?.efficacyDocUrl],
-      ['사용상주의사항 문서(PDF)', item.permit?.data?.precautionDocUrl]
-    ]) {
-      if (!href) continue;
-      const p = flowNode('p', '', 'cal-note'); const link = document.createElement('a'); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = label;
-      p.append(link); details.append(p);
+    if (analysis.reason) content.append(flowNode('p', analysis.reason, 'rx-detail-muted'));
+    const evidence = document.createElement('details'); evidence.className = 'rx-daily-evidence'; evidence.append(flowNode('summary', '계산 근거 보기'));
+    for (const c of analysis.comparisons) if (c.current != null) {
+      evidence.append(flowNode('p', `${analysis.row.dosePerAdministration}${analysis.row.doseUnit}/회${analysis.packagingEvidence ? ' (' + analysis.packagingEvidence + ')' : ''} × ${rxNumber(c.mgPerUnit)}mg/${analysis.prescribedUnit} × 하루 ${analysis.row.frequencyPerDay}회 = ${rxNumber(c.current)}mg/일`));
+      evidence.append(flowNode('p', `함량 출처: ${c.source}`));
+      if (c.reference) evidence.append(flowNode('p', `공식: ${analysis.official.perDose.min}~${analysis.official.perDose.max}${analysis.official.unit}/회 × 하루 ${analysis.official.frequency.min}~${analysis.official.frequency.max}회 = ${rxNumber(c.reference.min)}~${rxNumber(c.reference.max)}mg/일 (${analysis.official.population})`));
     }
-    panel.append(details);
-  } else {
-    panel.append(flowNode('p', '공식 사용법 정보를 확인하지 못했습니다.', 'tip'));
+    content.append(evidence);
+    const official = document.createElement('details'); official.className = 'rx-official-text'; official.append(flowNode('summary', '공식 용법·용량 보기'), flowNode('p', analysis.original || '공식 용법·용량 정보가 없습니다.'));
+    appendRxOfficialLinks(official, item); official.append(flowNode('p', analysis.sourceLabel, 'rx-detail-muted')); content.append(official);
+    if (analysis.fetchFailed) content.append(rxButton('다시 시도', 'rx-dose-retry', () => openRxDetail(group, 'dose')));
+    content.append(flowNode('p', '허가사항과의 단순 비교입니다. 처방 목적과 환자 상태에 따라 달라질 수 있어요.', 'rx-comparison-note'));
+  } catch {
+    if (request !== rxDetailRequest) return;
+    content.removeAttribute('aria-busy'); renderEmpty(content, '용량 정보를 불러오지 못했습니다.', '다시 시도', () => openRxDetail(group, 'dose'));
   }
-  renderDurBlock(panel, dur, group.row?.durationDays);
-  const sources = flowNode('div', '', 'cal-note');
-  sources.append(flowNode('p', '출처: 식품의약품안전처 의약품 허가사항'));
-  if (analysis?.usageText) sources.append(flowNode('p', '출처: 식품의약품안전처 e약은요'));
-  panel.append(sources);
-  for (const g of (analysis?.guards || [])) panel.append(flowNode('p', g, 'tip danger'));
-  panel.append(flowNode('p', '이 화면은 의료적 판단이 아니라 공식 허가사항 대비 현재 처방의 위치를 계산해 보여주는 참고 정보입니다. 실제 복용 여부는 처방한 의사·약사와 상의하세요.', 'tip danger'));
 }
-function rangeBar(min, max, actual, unit) {
-  const wrap = flowNode('div', '', 'dose-range-bar');
-  const track = flowNode('div', '', 'dose-range-track');
-  const clamped = Math.min(1, Math.max(0, (actual - min) / (max - min || 1)));
-  const marker = flowNode('span', '', 'dose-range-marker'); marker.style.left = (clamped * 100) + '%';
-  marker.title = `${actual} ${unit}`;
-  track.append(marker);
-  const labels = flowNode('div', '', 'dose-range-labels');
-  labels.append(flowNode('span', String(min)), flowNode('span', String(max)));
-  wrap.append(track, labels);
-  return wrap;
-}
+
 function openRxSearch(group = null) {
   const target = group || { id: ++rxGroupSerial, term: '', candidates: [], chosen: null, manual: true };
   target.request?.abort(); rxSearchTarget = target;
-  showScreen('pill'); setPillStep('search');
+  searchFormFilter = null; showScreen('pill'); setPillStep('search');
   $('#rxSearchContext').hidden = false; $('#rxSearchTitle').textContent = group ? `인식된 약 이름 수정: ${group.term}` : '처방약 직접 추가';
   $('#query').value = group?.term || ''; $('#companyQuery').value = ''; $('#itemSeqQuery').value = '';
   $('#results').replaceChildren(); $('#pagination').hidden = true; $('#showMoreResults').hidden = true;
@@ -1247,78 +1439,6 @@ function acceptRxSearch(item, fetchedAt) {
   rxSearchTarget = null; $('#rxSearchContext').hidden = true;
   renderRxGroups(); updateRxSelection(); showScreen('prescription');
   $('#rxSelectedSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-function editRxRecognition(group) {
-  group.request?.abort();
-  const form = document.createElement('form'); form.className = 'rx-recognition-editor';
-  const controls = {};
-  // 약 이름 / 1회 투여량 / 단위 / 1일 투여횟수 / 총 투약일수 - 각각 독립적으로 수정 가능 (item 7).
-  for (const [key, title] of [['drugName', '약 이름'], ['dosePerAdministration', '1회 투여량'], ['doseUnit', '단위 (예: 포, 캡슐, mL)'], ['frequencyPerDay', '1일 투여횟수'], ['durationDays', '총 투약일수']]) {
-    const label = flowNode('label', title, 'field'), input = document.createElement('input');
-    input.name = key; input.value = group.row[key] ?? ''; input.type = /drugName|doseUnit/.test(key) ? 'text' : 'number';
-    if (input.type === 'number') { input.min = '0.001'; input.step = key === 'dosePerAdministration' ? 'any' : '1'; }
-    if (key === 'drugName') input.required = true;
-    controls[key] = input; label.append(input); form.append(label);
-  }
-  form.append(flowNode('p', `원본 인식 결과: ${group.row.rawName}`));
-  const save = flowNode('button', '수정 후 공식 후보 검색'); save.type = 'submit';
-  const cancel = flowNode('button', '취소'); cancel.type = 'button'; cancel.onclick = () => renderRxGroup(group);
-  form.append(save, cancel);
-  form.onsubmit = async event => {
-    event.preventDefault(); if (!form.reportValidity()) return;
-    if (controls.drugName.value.trim() !== group.row.drugName) group.ignoreOcrCode = true;
-    for (const [key, input] of Object.entries(controls)) group.row[key] = input.type === 'number' ? (input.value ? Number(input.value) : null) : input.value.trim() || null;
-    group.row.strengthOrPackage = group.row.dosePerAdministration != null ? `${group.row.dosePerAdministration}${group.row.doseUnit || ''}` : group.row.strengthOrPackage;
-    group.row.needsReview = ['dosePerAdministration', 'frequencyPerDay', 'durationDays'].some(key => group.row[key] == null);
-    group.row.userConfirmed = true; group.term = group.row.drugName;
-    group.chosen = null; group.candidates = []; updateRxSelection();
-    await findRxCandidates(group);
-  };
-  group.el.replaceChildren(form); controls.drugName.focus();
-}
-function renderRxGroup(group) {
-  if (!group.el) { group.el = flowNode('fieldset', '', 'rx-group'); $('#rxCandidates').append(group.el); }
-  const el = group.el; el.replaceChildren(); el.append(flowNode('legend', `${rxGroups.indexOf(group) + 1}. ${group.term}`));
-  if (group.row) {
-    el.append(flowNode('p', medSchema.medicationSummary(rxDisplayRow(group)), 'rx-prescription-summary'));
-    if (group.row.needsReview || (group.chosen && !rxDisplayRow(group).doseUnit)) el.append(flowNode('p', '⚠ 인식 결과를 확인해주세요 · 확인이 필요합니다', 'tip'));
-    const correction = flowNode('button', '인식 내용 수정'); correction.type = 'button';
-    correction.onclick = () => editRxRecognition(group); el.append(correction);
-  }
-  if (group.chosen) {
-    const item = group.chosen.item, destination = MedicineFlow.getMedicineDestination(item);
-    el.append(flowNode('p', `✓ 공식 제품 확인됨 · ${item.name}`));
-    el.append(flowNode('p', `제형: ${MedicineFlow.dosageFormLabel(item) || ({ 'solid-oral': '경구 고형제', liquid: '액상제', other: '기타 제형', unknown: '확인 필요' }[destination.medicineForm])}`));
-    const view = flowNode('button', destination.cta, 'primary rx-product-cta'); view.type = 'button';
-    view.onclick = () => openMedicine(item, view, group.chosen.fetchedAt); el.append(view);
-  }
-  if (group.status && (!group.chosen || group.failed)) el.append(flowNode('p', group.status));
-  const choices = group.chosen ? document.createElement('details') : el;
-  if (group.chosen) { choices.append(flowNode('summary', '다른 공식 제품 선택')); el.append(choices); }
-  let pending = null;
-  const confirm = flowNode('button', '선택'); confirm.type = 'button'; confirm.disabled = true;
-  for (const entry of group.candidates) {
-    const { item, kind, strongMatch } = entry, label = flowNode('label', '', 'rx-choice'), radio = document.createElement('input'); radio.type = 'radio'; radio.name = `rx-${group.id}`; radio.value = item.id;
-    radio.checked = group.chosen?.item.id === item.id;
-    const copy = flowNode('span', item.name);
-    // strongMatch: this candidate's own 보험코드(insuranceCode)가 처방전에서 읽은 productCode와 일치 -
-    // 자동 선택하지 않고 배지로만 표시 (item 5).
-    if (strongMatch && window.MEDICINE_DEBUG === true) copy.append(flowNode('small', 'exact-code', 'rx-strong-match'));
-    copy.append(flowNode('small', item.company || '제조사 미제공'));
-    copy.append(kind === 'liquid' ? flowNode('small', `액상 · ${item.permit?.data?.packaging || '포장단위 미제공'}`) : flowNode('small', medicineSize(item)));
-    if (kind !== 'liquid') copy.append(flowNode('small', `${item.shape || '모양 미제공'} · ${item.form || '제형 미제공'}`));
-    radio.onchange = () => { pending = entry; confirm.disabled = false; }; label.append(radio, copy, makeSaveButton(item, kind, group.row)); choices.append(label);
-  }
-  syncSaveButtons();
-  confirm.onclick = () => { if (!pending) return; group.chosen = pending; group.status = '✓ 공식 제품 확인됨'; renderRxGroup(group); updateRxSelection(); };
-  const edit = flowNode('button', group.row ? '제품 직접 선택' : '인식된 약 이름 수정'); edit.type = 'button'; edit.onclick = () => openRxSearch(group);
-  const actions = flowNode('div', '', 'flow-actions'); if (group.candidates.length) actions.append(confirm); actions.append(edit);
-  if (group.failed) { const retry = flowNode('button', '후보 다시 찾기'); retry.type = 'button'; retry.onclick = () => findRxCandidates(group); actions.append(retry); }
-  choices.append(actions);
-}
-function renderRxGroups() {
-  $('#rxCandidates').replaceChildren(); $('#rxFoundTitle').hidden = !rxGroups.length;
-  rxGroups.forEach(group => { group.el = null; renderRxGroup(group); });
 }
 // OCR can misread one trailing syllable of an otherwise-correct name (e.g. "캡슐" -> "캡슬"), and the
 // official search API does not do fuzzy matching - a single wrong character anywhere returns zero
@@ -1400,26 +1520,6 @@ async function ensureEasyData(item, kind) {
   return item.easy;
 }
 // OCR/vision 처방 행(group.row - unified schema, doseUnit은 "포"/"캡슐"/"정"/"mL" 등 한글)을
-// doseCalc.analyzeDose가 기대하는 {doseAmount, doseUnit:'tablet'|'mL'|'pack', frequencyPerDay, days}
-// 형태로만 옮긴다 - 값 자체는 절대 다시 추측/보정하지 않는다 (item 23: OCR/파서는 수정하지 않음).
-const OCR_DOSE_UNIT_MAP = { 정: 'tablet', 캡슐: 'tablet', mL: 'mL', ml: 'mL', 포: 'pack' };
-function ocrDoseFromGroup(group) {
-  const row = group?.row; if (!row || row.dosePerAdministration == null) return null;
-  return { doseAmount: row.dosePerAdministration, doseUnit: OCR_DOSE_UNIT_MAP[row.doseUnit] ?? null,
-    frequencyPerDay: row.frequencyPerDay ?? null, days: row.durationDays ?? null };
-}
-// Gathers the async official-data inputs (성분/함량은 이미 검색 응답에 있고, 사용법은 필요할 때만 조회 -
-// ensureEasyData) and hands them to doseCalc.analyzeDose, which does all the actual math/comparison
-// and is unit-tested on its own (public/dose-calc.js) without any DOM/network dependency.
-async function computeDoseAnalysis(group) {
-  if (!group.chosen) return null;
-  if (!doseCalc) return { status: 'insufficient', guards: ['용량 계산 모듈을 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'] };
-  const { item, kind } = group.chosen;
-  const ocr = ocrDoseFromGroup(group);
-  if (!ocr) return { status: 'insufficient', guards: ['처방전에서 1회 투여량을 정확히 읽지 못했습니다. 정확한 용량 비교를 위해 추가 정보가 필요합니다.'], ocr };
-  await ensureEasyData(item, kind);
-  return doseCalc.analyzeDose({ ocr, kind, materials: item.permit?.data?.materials || '', usageText: item.easy?.data?.usage || '', patientWeightKg, patientAgeYears });
-}
 // item 14: a pouch count converts to a real dispensed VOLUME whenever the official packaging text
 // names exactly one unambiguous mL-per-pouch figure - this is packaging arithmetic (1포 = 15mL), never
 // a concentration/mg guess, and stays entirely separate from analyzeDose's ingredient math above.
@@ -1431,14 +1531,13 @@ async function processRxNames(names) {
   const added = names.map(value => {
     const row = typeof value === 'string' ? null : value;
     return { id: ++rxGroupSerial, term: row ? row.drugName : value, row,
-      candidates: [], chosen: null, ocrDose: null };
+      candidates: [], chosen: null, ocrDose: null, source: 'ocr' };
   });
   rxGroups.push(...added); renderRxGroups();
   $('#rxStatus').textContent = added.length ? '처방전에서 찾은 약입니다. 각 항목의 공식 후보를 하나씩 선택해주세요.' : '약 이름을 읽지 못했습니다. 다시 촬영하거나 + 약 직접 추가에서 검색해주세요.';
   // Sequential requests keep OCR lookup load bounded. Every row can be corrected independently.
   for (const group of added) { if (!rxGroups.includes(group)) break; await findRxCandidates(group); }
 }
-$('#rxAdd').onclick = () => openRxSearch();
 $('#rxSearchCancel').onclick = () => { rxSearchTarget = null; $('#rxSearchContext').hidden = true; controller?.abort(); showScreen('prescription'); };
 
 function cancelRxOCR() {
@@ -1517,7 +1616,115 @@ async function scanPrescription(input) {
 $('#rxCamera').onchange = event => scanPrescription(event.target);
 $('#rxPhoto').onchange = event => scanPrescription(event.target);
 $('#rxCancel').onclick = () => { cancelRxOCR(); $('#rxStatus').textContent = '분석을 취소했습니다. 이미지를 저장하지 않았습니다.'; };
+$('#rxPrivacyMore').onclick = () => { $('#rxPrivacyDetail').hidden = !$('#rxPrivacyDetail').hidden; };
+
+// ---- 약 직접 추가: 페이지 이동 없이 처방전 화면 안에서 검색→선택→복용정보 입력까지 처리한다 (요청 6/7/8) -
+// 예전 [+ 약 직접 추가]는 openRxSearch()를 호출해 알약 실물크기 검색 화면(pill screen)으로 이동시켰다 -
+// 이 함수는 그 문제를 고친다. openRxSearch/rxSearchTarget(그룹의 "제품 직접 선택" - 이미 인식된 OCR
+// 행의 후보를 바꾸는 별개 기능)은 그대로 둔다 - 여기서 건드리는 건 완전히 새 항목을 추가하는 흐름뿐이다.
+let rxAddController = null, rxAddSelected = null;
+function openAddMedicineModal() {
+  $('#rxAddPanel').hidden = false;
+  $('#rxAddQuery').value = ''; $('#rxAddStatus').textContent = '';
+  $('#rxAddResults').replaceChildren(); $('#rxAddResults').hidden = false;
+  $('#rxAddSearchForm').hidden = false; $('#rxAddDoseForm').hidden = true;
+  rxAddSelected = null;
+  $('#rxAddQuery').focus();
+  $('#rxAddPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function closeAddMedicineModal() { $('#rxAddPanel').hidden = true; rxAddController?.abort(); }
+$('#rxAdd').onclick = openAddMedicineModal;
+$('#rxAddClose').onclick = closeAddMedicineModal;
+
+// 알약(정제/캡슐 등)만 검색하지 않는다 - /api/medicines(낱알식별)와 /api/liquids(제품허가정보 기반, 시럽·
+// 현탁액 등)를 함께 조회해 모든 제형을 결과에 그대로 보여준다(요청 7) - findRxCandidates가 OCR 인식 이름을
+// 매칭할 때 쓰는 것과 같은 두 엔드포인트다. medicineForm으로 결과를 거르지 않는다 - 선택 후 분류만 한다.
+async function searchAddMedicine(term) {
+  rxAddController?.abort(); const controller = rxAddController = new AbortController();
+  $('#rxAddStatus').textContent = '검색하는 중…'; $('#rxAddResults').replaceChildren();
+  try {
+    const params = new URLSearchParams({ item_name: term, numOfRows: 20 });
+    const [pillRes, liquidRes] = await Promise.all([
+      fetch(API_BASE + '/api/medicines?' + params, { signal: controller.signal }),
+      fetch(API_BASE + '/api/liquids?' + params, { signal: controller.signal })
+    ]);
+    const [pillData, liquidData] = await Promise.all([pillRes.json(), liquidRes.json()]);
+    if (controller !== rxAddController) return;
+    // 실제 재현된 버그: 같은 품목이 두 소스에 모두 걸리면(예: 캡슐 제품도 일반 허가정보 검색에 잡힘)
+    // liquidData를 나중에 넣어 덮어쓰던 순서 때문에 항상 easy:'not_requested'인 허가정보 쪽이 이겨서,
+    // 이미 enrichMedicines로 성분/사용법까지 채워진 낱알식별 쪽 데이터가 사라지고 있었다 - 그 결과
+    // "약 직접 추가"로 넣은 약은 공식 용법·용량이 있어도 용량 분석에서 "정보가 없어요"로 보였다.
+    // pillData를 나중에 넣어, 더 풍부한 낱알식별 데이터가 항상 이기게 한다.
+    const entries = new Map();
+    for (const data of [liquidData, pillData]) for (const item of data.items || []) entries.set(String(item.id), item);
+    const items = [...entries.values()];
+    $('#rxAddStatus').textContent = items.length ? `${items.length}개 제품` : '검색 결과가 없습니다.';
+    renderAddMedicineResults(items);
+  } catch (error) {
+    if (controller === rxAddController && error.name !== 'AbortError') $('#rxAddStatus').textContent = '검색에 실패했습니다. 잠시 후 다시 시도해주세요.';
+  }
+}
+function renderAddMedicineResults(items) {
+  const list = $('#rxAddResults'); list.replaceChildren();
+  for (const item of items) {
+    const button = flowNode('button', '', 'rx-add-result'); button.type = 'button';
+    const copy = document.createElement('span'); // sizing handled by .rx-add-result>span in ui.css
+    copy.append(flowNode('b', item.name), flowNode('small', item.company || '제조사 미제공'), flowNode('small', MedicineFlow.dosageFormLabel(item) || item.form || '제형 미제공'));
+    button.append(copy); button.onclick = () => selectAddMedicine(item);
+    list.append(button);
+  }
+}
+$('#rxAddSearchForm').onsubmit = event => { event.preventDefault(); const term = $('#rxAddQuery').value.trim(); if (term.length >= 2) searchAddMedicine(term); };
+
+// 제형(medicineForm)에 따라 1회 복용량 단위 선택지·추천값을 정해준다(요청 9) - 사용자가 직접 바꿀 수
+// 있다. 정제/캡슐은 성상·제품명에 "캡슐/캅셀"이 있는지로 구분하고(기존 3D 모형 분류와 같은 신호),
+// 액상은 공식 포장정보에 "포"가 있으면 포를, 아니면 mL을 기본값으로 추천한다.
+function doseUnitOptionsFor(item, kind) {
+  return kind === 'liquid' ? ['mL', '포'] : ['정', '캡슐'];
+}
+function suggestedDoseUnit(item, kind) {
+  if (kind === 'liquid') return /포/.test(item.permit?.data?.packaging || '') ? '포' : 'mL';
+  return /캡슐|캅셀/.test(`${item.form || ''} ${item.description || ''} ${item.name || ''}`) ? '캡슐' : '정';
+}
+function selectAddMedicine(item) {
+  const kind = MedicineFlow.classifyMedicineForm(item) === 'liquid' ? 'liquid' : 'pill';
+  rxAddSelected = { item, kind };
+  $('#rxAddResults').hidden = true; $('#rxAddSearchForm').hidden = true; $('#rxAddDoseForm').hidden = false;
+  $('#rxAddSelectedName').textContent = item.name;
+  const unitSelect = $('#rxAddDoseUnit'); unitSelect.replaceChildren();
+  for (const opt of doseUnitOptionsFor(item, kind)) { const o = document.createElement('option'); o.value = opt; o.textContent = opt; unitSelect.append(o); }
+  unitSelect.value = suggestedDoseUnit(item, kind);
+  $('#rxAddDoseAmount').value = ''; $('#rxAddFrequency').value = ''; $('#rxAddDuration').value = '';
+  const packaging = item.permit?.data?.packaging || '';
+  const mlPerPouch = mlPerPouchFromPackaging(packaging);
+  // "1포 = 15mL" 같은 공식 포장정보 기준 환산을 참고로만 보여준다(요청 9) - 임의 추정이 아니라 packaging
+  // 원문에서 유일하게 확인되는 mL 값일 때만(mlPerPouchFromPackaging) 표시한다.
+  const syncPouchHint = () => { $('#rxAddPouchHint').hidden = !(unitSelect.value === '포' && mlPerPouch); if (mlPerPouch) $('#rxAddPouchHint').textContent = `1포 = ${mlPerPouch}mL (공식 포장정보 기준)`; };
+  unitSelect.onchange = syncPouchHint; syncPouchHint();
+}
+$('#rxAddCancelDose').onclick = () => { rxAddSelected = null; $('#rxAddDoseForm').hidden = true; $('#rxAddResults').hidden = false; $('#rxAddSearchForm').hidden = false; };
+$('#rxAddConfirm').onclick = async () => {
+  if (!rxAddSelected) return;
+  const { item, kind } = rxAddSelected;
+  const amount = Number($('#rxAddDoseAmount').value), freq = Number($('#rxAddFrequency').value), dur = Number($('#rxAddDuration').value);
+  await loadMedSchema();
+  const row = medSchema.clampMedication({
+    drugName: item.name, rawName: item.name, productCode: item.insuranceCode || null,
+    doseUnit: $('#rxAddDoseUnit').value,
+    dosePerAdministration: amount, frequencyPerDay: freq, durationDays: dur,
+    confidence: { productCode: 1, drugName: 1, dose: 1, frequency: 1, duration: 1 }
+  });
+  // 약 직접 추가는 이미 사용자가 공식 제품을 확정한 것이므로 기존 OCR 매칭(findRxCandidates)을 다시
+  // 거치지 않는다 - group.chosen을 곧바로 채운다. 출처만 'manual'로 남겨 OCR 인식 항목과 구분한다(요청 10).
+  const group = { id: ++rxGroupSerial, term: item.name, row, candidates: [{ item, fetchedAt: new Date().toISOString(), kind }],
+    chosen: { item, fetchedAt: new Date().toISOString(), kind }, source: 'manual' };
+  rxGroups.push(group); renderRxGroups(); updateRxSelection();
+  closeAddMedicineModal();
+  $('#rxStatus').textContent = '직접 추가한 약을 처방 목록에 넣었습니다.';
+  $('#rxSelectedSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
 $('#rxClear').onclick = () => {
+  rxPrescriptionDate = null; closeRxDetail();
   cancelRxOCR(); rxGroups.forEach(group => group.request?.abort()); rxGroups = []; rxSelected.clear(); renderRxGroups(); updateRxSelection();
   $('#rxStatus').textContent = '처방전 내용을 지웠습니다.';
 };
@@ -1548,42 +1755,71 @@ async function saveCurrentPrescription() {
   if (!authSession || !authConfigData) { $('#rxSaveStatus').textContent = '로그인 후 저장할 수 있습니다.'; return; }
   const items = prescriptionItemsFromGroups();
   if (!items.length) { $('#rxSaveStatus').textContent = '저장할 처방 내용이 없습니다.'; return; }
+  if ($('#rxSavePrescription').disabled) return;
+  $('#rxSavePrescription').disabled = true;
   $('#rxSaveStatus').textContent = '저장하는 중…';
   try {
     const api = await loadPrescriptionsApi();
     await api.savePrescription(authConfigData, authSession, { label: prescriptionLabelFromGroups(), items }, fetch);
-    $('#rxSaveStatus').textContent = '처방전을 저장했습니다.';
-    if (!$('#rxRecent').open) return; // 열려 있을 때만 목록을 새로 그린다.
+    $('#rxSaveStatus').textContent = '처방전을 저장했습니다.'; showToast('✓ 처방전이 저장되었습니다');
     await renderRecentPrescriptions();
   } catch {
     $('#rxSaveStatus').textContent = '처방전을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.';
-  }
+  } finally { $('#rxSavePrescription').disabled = false; }
 }
 $('#rxSavePrescription').onclick = saveCurrentPrescription;
 
+// 라벨 "약이름 외 N건"에서 총 개수를 되짚는다 - prescriptionLabelFromGroups()가 저장 시 만든 것과 같은
+// 형식이라 별도 items count 조회 없이 카드에 "N개 의약품"을 보여줄 수 있다(요청 21).
+function itemCountFromLabel(label) {
+  const m = String(label || '').match(/외\s*(\d+)건$/);
+  return m ? Number(m[1]) + 1 : 1;
+}
+const RX_RECENT_PREVIEW = 3;
+let rxRecentRows = [], rxRecentShowAll = false;
+// 요청 21: 접힌 한 줄이 아니라 최근 2~3개를 바로 카드로 보여주고, 그 이상은 "전체 보기"를 눌러야 나온다.
+function renderRecentCards() {
+  const list = $('#rxRecentList'); list.replaceChildren();
+  const rows = rxRecentShowAll ? rxRecentRows : rxRecentRows.slice(0, RX_RECENT_PREVIEW);
+  for (const row of rows) {
+    const card = flowNode('article', '', 'rx-recent-item');
+    const created = new Date(row.created_at);
+    card.append(flowNode('p', Number.isNaN(created.getTime()) ? '날짜 정보 없음' : created.toLocaleDateString('ko-KR')));
+    card.append(flowNode('p', `${row.label || '처방전'} · ${itemCountFromLabel(row.label)}개 의약품`));
+    card.append(flowNode('span', '저장됨', 'badge'));
+    const actions = flowNode('div', '', 'flow-actions');
+    const open = flowNode('button', '다시 보기'); open.type = 'button'; open.onclick = () => reopenPrescription(row.id);
+    const remove = flowNode('button', '삭제', 'btn-danger'); remove.type = 'button'; remove.setAttribute('aria-label', `${row.label || '처방전'} 삭제`);
+    remove.onclick = async () => {
+      remove.disabled = true; open.disabled = true;
+      try { const api = await loadPrescriptionsApi(); await api.deletePrescription(authConfigData, authSession, row.id, fetch); showToast('처방전이 삭제되었습니다'); await renderRecentPrescriptions(); }
+      catch { showToast('삭제하지 못했습니다. 다시 시도해주세요.', 'error'); remove.disabled = false; open.disabled = false; }
+    };
+    actions.append(open, remove); card.append(actions); list.append(card);
+  }
+  $('#rxRecentShowAll').hidden = rxRecentShowAll || rxRecentRows.length <= RX_RECENT_PREVIEW;
+}
 async function renderRecentPrescriptions() {
-  const list = $('#rxRecentList'); if (!list) return;
-  if (!authSession || !authConfigData) { $('#rxRecentStatus').textContent = '로그인 후 저장된 처방전을 볼 수 있습니다.'; list.replaceChildren(); return; }
-  $('#rxRecentStatus').textContent = '불러오는 중…'; list.replaceChildren();
+  const section = $('#rxRecent'); if (!section) return;
+  if (!authSession || !authConfigData) { section.hidden = true; return; }
+  section.hidden = false;
+  if (!$('#rxRecentStatus')) return; // 화면/테스트가 await 도중 정리된 경우
+  $('#rxRecentStatus').textContent = ''; renderLoading($('#rxRecentList'));
   try {
     const api = await loadPrescriptionsApi();
     const rows = await api.listPrescriptions(authConfigData, authSession, fetch);
-    $('#rxRecentStatus').textContent = rows.length ? '' : '저장된 처방전이 없습니다.';
-    for (const row of rows) {
-      const card = flowNode('article', '', 'rx-recent-item');
-      card.append(flowNode('p', row.label || '처방전'));
-      card.append(flowNode('small', new Date(row.created_at).toLocaleDateString('ko-KR')));
-      const actions = flowNode('div', '', 'flow-actions');
-      const open = flowNode('button', '다시 보기'); open.type = 'button'; open.onclick = () => reopenPrescription(row.id);
-      const remove = flowNode('button', '삭제'); remove.type = 'button';
-      remove.onclick = async () => { try { await api.deletePrescription(authConfigData, authSession, row.id, fetch); } catch { /* 목록을 다시 그리면 실패 시 그대로 남는다. */ } await renderRecentPrescriptions(); };
-      actions.append(open, remove); card.append(actions); list.append(card);
-    }
+    if (!$('#rxRecentStatus')) return; // screenchange가 자동으로 트리거하므로 await 도중 화면이 사라질 수 있다
+    rxRecentRows = Array.isArray(rows) ? rows.filter(row => row && row.id) : []; rxRecentShowAll = false;
+    $('#rxRecentStatus').textContent = rxRecentRows.length ? '' : '저장된 처방전이 없습니다.';
+    renderRecentCards();
+    if (!rxRecentRows.length) renderEmpty($('#rxRecentList'), '첫 처방전을 등록하면 언제든 다시 확인할 수 있어요.', '처방전 등록하기', () => $('#rxPhoto').click());
   } catch {
-    $('#rxRecentStatus').textContent = '저장된 처방전을 불러오지 못했습니다.';
-  }
+    if ($('#rxRecentStatus')) { $('#rxRecentStatus').textContent = ''; renderEmpty($('#rxRecentList'), '저장된 처방전을 불러오지 못했습니다.', '다시 시도', renderRecentPrescriptions); }
+  } finally { $('#rxRecentList')?.removeAttribute('aria-busy'); }
 }
-$('#rxRecent').ontoggle = event => { if (event.target.open) renderRecentPrescriptions(); };
+$('#rxRecentShowAll').onclick = () => { rxRecentShowAll = true; renderRecentCards(); };
+// 처방전 화면에 들어올 때마다 최신 목록을 보여준다(요전엔 펼쳐야만 불러왔다 - 이제 화면에 항상 보인다).
+window.addEventListener('screenchange', event => { if (event.detail === 'prescription') renderRecentPrescriptions(); });
 
 // 저장된 항목(row)을 다시 rxGroups로 복원한다 - item_seq가 있으면 기존 검색 엔드포인트(캐시 포함)로 공식
 // 정보를 새로 가져오고, Google Vision OCR/처방전 이미지 분석은 어디에서도 다시 호출하지 않는다.
@@ -1595,7 +1831,7 @@ async function reopenPrescription(id) {
     const rows = await api.fetchPrescriptionItems(authConfigData, authSession, id, fetch);
     await loadMedSchema();
     cancelRxOCR(); rxGroups.forEach(group => group.request?.abort()); rxGroups = []; rxSelected.clear();
-    for (const stored of rows) {
+    for (const stored of (Array.isArray(rows) ? rows : []).filter(Boolean)) {
       const group = {
         id: ++rxGroupSerial, term: stored.drug_name, candidates: [], chosen: null, status: '',
         row: medSchema.clampMedication({
@@ -1603,6 +1839,7 @@ async function reopenPrescription(id) {
           doseUnit: stored.dose_unit, frequencyPerDay: stored.frequency_per_day, durationDays: stored.duration_days
         })
       };
+      if (typeof stored.needs_review === 'boolean') group.row.needsReview = stored.needs_review;
       rxGroups.push(group);
       if (stored.item_seq) {
         try {
@@ -1615,7 +1852,9 @@ async function reopenPrescription(id) {
       }
       group.status = group.chosen ? '✓ 공식 제품 확인됨' : stored.item_seq ? '⚠ 공식 제품 정보를 다시 불러오지 못했습니다. 제품을 직접 선택해주세요.' : '공식 제품이 선택되지 않은 상태로 저장되었습니다.';
     }
+    rxPrescriptionDate = rxRecentRows.find(row => row.id === id)?.created_at || null;
     renderRxGroups(); updateRxSelection(); showScreen('prescription');
+    $('#rxSelectedSection').scrollIntoView({ block: 'start' });
     $('#rxStatus').textContent = '저장된 처방전을 불러왔습니다 (다시 촬영하지 않았습니다).';
   } catch {
     $('#rxRecentStatus').textContent = '처방전을 불러오지 못했습니다.';
@@ -1638,14 +1877,15 @@ function isOralLiquidCandidate(item) { return MedicineFlow.classifyMedicineForm(
 let liquidRequest, liquidTerm = '', liquidPage = 1, fraction = .5, fractionLabel = '1/2';
 async function searchLiquids(page = 1) {
   liquidRequest?.abort(); const request = liquidRequest = new AbortController();
-  $('#liquidStatus').textContent = '공식 허가정보에서 검색 중…'; $('#liquidResults').replaceChildren(); $('#liquidMore').hidden = true;
+  $('#liquidStatus').textContent = '공식 허가정보에서 검색 중…'; renderLoading($('#liquidResults')); $('#liquidMore').hidden = true;
   $('#liquidGuide').hidden = true; $('#containerTypeChoice').hidden = true; $('#bottleNotice').hidden = true; $('#bottleCalculator').hidden = true;
   resetLiquidPhoto();
   try {
     const data = await flowSearch('/api/liquids', liquidTerm, request.signal, page); if (request.signal.aborted) return;
     liquidPage = page;
     // Permit search also includes non-oral products; only explicit oral-liquid forms are offered.
-    const items = data.items.filter(isOralLiquidCandidate);
+    const items = (Array.isArray(data?.items) ? data.items : []).filter(item => item && isOralLiquidCandidate(item));
+    $('#liquidResults').replaceChildren();
     $('#liquidStatus').textContent = items.length ? '제품명·제조사·포장단위를 확인하고 선택하세요.' : '이 페이지에 확인 가능한 액체약이 없습니다. 시럽·내복액 등 정확한 제품명으로 검색해주세요.';
     for (const item of items) {
       const button = flowNode('button', item.name); button.type = 'button';
@@ -1657,7 +1897,9 @@ async function searchLiquids(page = 1) {
     }
     syncSaveButtons();
     $('#liquidMore').hidden = page * data.pageSize >= data.total || page >= 100;
-  } catch (error) { if (!request.signal.aborted) $('#liquidStatus').textContent = error instanceof TypeError ? '네트워크 연결을 확인해주세요.' : error.message; }
+    if (!items.length) renderEmpty($('#liquidResults'), '다른 제품명으로 다시 검색해보세요.', '검색어 다시 입력', () => $('#liquidQuery').focus());
+  } catch (error) { if (!request.signal.aborted) { $('#liquidStatus').textContent = error instanceof TypeError ? '네트워크 연결을 확인해주세요.' : error.message; renderEmpty($('#liquidResults'), '액체약 정보를 가져오지 못했습니다.', '다시 시도', () => searchLiquids(page)); } }
+  finally { if (liquidRequest === request) $('#liquidResults').removeAttribute('aria-busy'); }
 }
 $('#liquidSearch').onsubmit = event => { event.preventDefault(); liquidTerm = $('#liquidQuery').value.trim(); if (liquidTerm.length >= 2) searchLiquids(); };
 $('#liquidMore').onclick = () => searchLiquids(liquidPage + 1);
@@ -1705,12 +1947,29 @@ let liquidSelectedItem = null;
 // whatever section happens to be hidden/visible at the DOM level.
 let currentContainerType = null;
 function selectLiquid(item) {
-  if (MedicineFlow.classifyMedicineForm(item) !== 'liquid') return openMedicine(item);
+  // 산제/과립/포/스틱(요청 5)도 이 화면의 포/스틱 분할 가이드를 그대로 쓴다 - classifyMedicineForm은
+  // 이 제품들을 'liquid'로 보지 않으므로(의도적으로 건드리지 않음), classifyDisplayForm의 별도 판정도
+  // 함께 허용한다. 그 외 제형은 기존대로 openMedicine()으로 되돌아간다(무한 재귀 방지).
+  if (MedicineFlow.classifyMedicineForm(item) !== 'liquid' && MedicineFlow.classifyDisplayForm(item) !== 'powder-sachet') return openMedicine(item);
   liquidSelectedItem = item; bottlePhotoRequest?.abort();
   $('#liquidName').textContent = item.name; $('#liquidCompany').textContent = item.company || '제조사 미제공';
   const flavor = buildFlavorInfo(item);
-  $('#liquidFlavor').hidden = !flavor;
-  $('#liquidFlavor').textContent = flavor ? `맛/향: ${flavor.labels.join(', ')} · 출처: ${flavor.sourceType} (${flavor.sourceText})` : '';
+  $('#liquidFlavor').hidden = false;
+  // 요청 9의 핵심정보 카드(맛/향 한 칸)에 그대로 들어가므로, 원문 출처 인용은 시각적으로 넘치지 않게
+  // title 툴팁으로만 남기고 눈에 보이는 텍스트에는 넣지 않는다(chip 방식과 동일한 원칙).
+  $('#liquidFlavor').textContent = flavor ? `맛/향: ${flavor.labels.join(', ')}` : '맛/향: 등록된 맛 정보 없음';
+  $('#liquidFlavor').title = flavor?.sourceText ? `${flavor.sourceType}: ${flavor.sourceText}` : '';
+  // 핵심정보 카드(요청 4) - pouch/bottle 어느 쪽으로 갈리든 selectLiquid() 한 곳에서 채운다. mL 단위
+  // 공식 용법은 doseCalc.parseOfficialDosage(순수 함수, 이미 테스트됨)를 그대로 재사용한다.
+  const dose = officialDoseSummary(item), storage = officialStorageText(item) || '정보 없음';
+  for (const prefix of ['liquid', 'bottle']) {
+    const doseEl = $(`#${prefix}CoreInfoDose`), tipEl = $(`#${prefix}CoreInfoTip`), storageEl = $(`#${prefix}CoreInfoStorage`), card = $(`#${prefix}CoreInfoCard`);
+    if (!card) continue;
+    doseEl.textContent = dose.text || (dose.usage ? dose.usage.split(/\n/)[0].slice(0, 60) : '정보 없음');
+    if (tipEl) tipEl.textContent = dose.usage ? dose.usage.split(/\n/)[0].slice(0, 80) : '정보 없음';
+    storageEl.textContent = storage;
+    card.hidden = false;
+  }
   const packaging = item.permit?.data?.packaging || '';
   $('#liquidPackaging').textContent = `공식 포장단위: ${packaging || '미제공'} · 출처: 식약처 제품 허가정보`;
   $('#liquidPackagingSummary').hidden = !packaging;
@@ -1768,7 +2027,7 @@ function showBottleNotice(item) {
   const volumes = packageVolumes(packaging), select = $('#bottleVolumeSelect'); select.replaceChildren();
   const placeholder = flowNode('option', volumes.length ? '포장에 적힌 용량을 선택해주세요' : '공식 용량 미제공'); placeholder.value = ''; select.append(placeholder);
   for (const ml of volumes) { const option = flowNode('option', `${ml} mL`); option.value = ml; select.append(option); }
-  $('#bottleManualMl').value = '';
+  $('#bottleManualMl').value = ''; $('#bottleDoseMl').value = '';
   loadBottlePhoto(item);
 }
 let bottlePhotoRequest;
@@ -1799,8 +2058,22 @@ $('#bottleSearchAgainBtn').onclick = () => { $('#bottleNotice').hidden = true; $
 // A product classified 'unknown' can still turn out to be a pouch once the user looks at it -
 // this is the one deliberate escape hatch back into the fraction-line guide from the bottle screen.
 $('#bottleIsActuallyPouch').onclick = () => applyContainerType('pouch', liquidSelectedItem);
+// 1회 복용량을 직접 입력해 "전체 용량의 몇 %"만 참고로 보여준다(병 제품은 절반을 먹으라는 뜻이 아니므로
+// 분율 선택보다 이 계산을 먼저 보여준다) - 분율 버튼(아래 접힌 "분율로 확인하기")은 그대로 유지한다.
+function renderBottleDoseResult() {
+  const manual = $('#bottleManualMl').value.trim(), supplied = Number(manual || $('#bottleVolumeSelect').value);
+  const total = Number.isFinite(supplied) && supplied > 0 && supplied <= 10000 ? supplied : null;
+  const dose = Number($('#bottleDoseMl').value);
+  const result = $('#bottleDoseResult');
+  if (!total) { result.textContent = '총 용량을 확인하면 1회 복용량이 전체의 몇 %인지 계산할 수 있어요'; return; }
+  if (!Number.isFinite(dose) || dose <= 0) { result.textContent = `총 용량 ${total} mL · 1회 복용량을 입력해주세요`; return; }
+  const percent = Math.round((dose / total) * 1000) / 10;
+  result.textContent = `총 용량 ${total} mL 중 1회 복용량 ${dose} mL → 전체의 ${percent}%`;
+}
+$('#bottleDoseMl')?.addEventListener('input', renderBottleDoseResult);
 let bottleFraction = .5, bottleFractionLabel = '1/2';
 function renderBottleCalculator() {
+  renderBottleDoseResult();
   const manual = $('#bottleManualMl').value.trim(), supplied = Number(manual || $('#bottleVolumeSelect').value);
   const ml = Number.isFinite(supplied) && supplied > 0 && supplied <= 10000 ? supplied : null;
   if (ml) {
@@ -1857,13 +2130,15 @@ $('#startCamera').onclick = async () => {
   } catch { stream?.getTracks().forEach(track => track.stop()); $('#cameraError').textContent = '카메라 권한을 확인해주세요. HTTPS 환경에서만 사용할 수 있습니다.'; }
 };
 
-let liquidImageRequest, liquidImageItem = null, liquidPhotoReady = false, usingFallbackShape = false;
+let liquidImageRequest, liquidImageItem = null, liquidPhotoReady = false;
 const DEFAULT_USABLE = { top: 6, bottom: 94 };
 let usableRegion = { ...DEFAULT_USABLE };
 // The pixel-analysis module is dynamically imported (same pattern as the 3D model, see above) so a
 // browser/test environment without it just skips auto-detection instead of failing to load.
-let pouchCropModule = null;
-import('./pouch-crop.js').then(m => { pouchCropModule = m; }).catch(() => {});
+// Only needed once a pouch/stick photo actually needs auto-cropping - lazy, triggered on entry to
+// the liquid screen (see showScreen()), not on every page load.
+let pouchCropModule = null, pouchCropPromise = null;
+function ensurePouchCrop() { return pouchCropPromise ??= import('./pouch-crop.js').then(m => { pouchCropModule = m; }).catch(() => {}); }
 // Manually curated per-product overrides for photos where automatic background segmentation is
 // unreliable (a colored backdrop card, or a box touching the container with no background gap to
 // separate them - see findPouchRegion() in pouch-crop.js). Both rects are fractions (0..1):
@@ -1879,21 +2154,22 @@ const POUCH_CROP_OVERRIDES = {
   }
 };
 function resetLiquidPhoto() {
-  liquidImageRequest?.abort(); liquidPhotoReady = false; usingFallbackShape = false;
+  liquidImageRequest?.abort(); liquidPhotoReady = false;
   const photo = $('#liquidProductPhoto'); photo.onload = photo.onerror = null; photo.removeAttribute('src'); photo.hidden = true;
-  $('#liquidFallback').hidden = true; $('#liquidPhotoStage').hidden = true; $('#photoFractionLine').hidden = true;
+  $('#liquidPhotoStage').hidden = true; $('#photoFractionLine').hidden = true;
   $('#usableTopGuide').hidden = true; $('#usableBottomGuide').hidden = true; $('#liquidPhotoZoom').hidden = true;
   $('#usableAdjustment').hidden = true; $('#liquidImageRetry').hidden = true; $('#liquidImageSource').textContent = '';
   $('#liquidUploadOwnPrompt').hidden = true; $('#liquidOwnCamera').value = ''; $('#liquidOwnFile').value = '';
   usableRegion = { ...DEFAULT_USABLE };
 }
-function showFallbackSchematic(message) {
-  liquidPhotoReady = false; usingFallbackShape = true;
-  $('#liquidPhotoStage').hidden = false; $('#liquidFallback').hidden = false; $('#liquidProductPhoto').hidden = true;
+// 공식 사진이 전혀 없는 경우(data.status === 'not_found') - 실물 사진도, 참고용 도형도 없이 분할선/
+// label을 절대 그리지 않는다(요청: "제품 사진이 없는데 1/2 label이 허공에 뜨는" 문제의 근본 원인이
+// 바로 여기서 참고용 도형 위에 분할선을 그려온 것이었다). 사진이 없을 때 보여줄 것은 "제품 사진이
+// 없어요" 안내와 촬영/선택 버튼뿐이다 - liquidPhotoReady를 true로 만드는 어떤 경로도 거치지 않는다.
+function showNoOfficialPhoto(message) {
+  liquidPhotoReady = false;
+  $('#liquidPhotoStage').hidden = true; $('#liquidProductPhoto').hidden = true;
   $('#liquidImageStatus').textContent = message; $('#usableAdjustment').hidden = true; $('#liquidPhotoZoom').hidden = true;
-  // No official photo exists at all - offer to use the user's own photo of the same product
-  // instead of leaving them with only the generic schematic (only meaningful for pouch/stick
-  // products, since that is the only case this whole screen is reachable from).
   $('#liquidUploadOwnPrompt').hidden = false;
   renderFraction();
 }
@@ -1914,7 +2190,7 @@ async function loadLiquidPhoto(item) {
     if (String(data.id) !== String(item.id)) throw new Error('선택 제품과 이미지 품목기준코드가 일치하지 않습니다.');
     // "공식 이미지 자체가 없음"(not_found)과 "이미지는 있지만 포 crop만 실패"는 서로 다른 상태다 - 후자는
     // 이 분기를 타지 않고 아래에서 원본 사진을 그대로 보여준다(showFullPhoto).
-    if (data.status === 'not_found') { showFallbackSchematic('공식 포장 사진이 없어 참고용 도형을 표시합니다.'); return; }
+    if (data.status === 'not_found') { showNoOfficialPhoto('공식 포장 사진이 없어요.'); return; }
     const inlinePhoto = typeof data.imageData === 'string' && data.imageData.length <= 3000000 && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data.imageData);
     if (data.status !== 'ok' || (!safeImage(data.imageUrl) && !inlinePhoto)) throw new Error('공식 이미지 주소를 확인하지 못했습니다.');
     const rawSrc = inlinePhoto ? data.imageData : data.imageUrl;
@@ -1971,8 +2247,8 @@ function applyPouchCrop(source, item, data, rawSrc) {
     const photo = $('#liquidProductPhoto');
     photo.alt = `${item.name} · ${item.company || ''} 공식 포장 사진 (포장 용기 영역만)`;
     photo.src = cropCanvas.toDataURL('image/jpeg', 0.95); photo.hidden = false;
-    liquidPhotoReady = true; usingFallbackShape = false;
-    $('#liquidImageStatus').textContent = auto ? '공식 사진에서 자동으로 찾은 포장 용기 영역입니다.' : '지정된 포장 용기 영역입니다.';
+    liquidPhotoReady = true;
+    $('#liquidImageStatus').textContent = '제품 사진의 분할 위치를 참고하세요. 정확한 용량은 계량도구로 확인해주세요.';
     $('#liquidImageSource').textContent = `${data.source || '식약처 공식 데이터'} · 품목기준코드 ${item.id}`;
     usableRegion = override?.usableLiquidRect ? { ...override.usableLiquidRect } : { ...DEFAULT_USABLE };
     $('#usableAdjustment').hidden = false; $('#liquidPhotoZoom').hidden = false; syncUsableInputs(); renderFraction();
@@ -1986,7 +2262,7 @@ function showFullPhoto(item, data, rawSrc) {
   const photo = $('#liquidProductPhoto');
   photo.alt = `${item.name} · ${item.company || ''} 공식 제품 사진 (포장 용기 부분 자동 구분 실패 - 원본 그대로 표시)`;
   photo.src = rawSrc; photo.hidden = false;
-  liquidPhotoReady = true; usingFallbackShape = false;
+  liquidPhotoReady = true;
   $('#liquidImageStatus').textContent = '포장 용기 부분을 자동으로 구분하지 못해 공식 사진 전체를 표시합니다. 분할 위치는 대략적인 참고용입니다.';
   $('#liquidImageSource').textContent = `${data.source || '식약처 공식 데이터'} · 품목기준코드 ${item.id}`;
   usableRegion = { ...DEFAULT_USABLE };
@@ -1998,14 +2274,15 @@ function syncUsableInputs() {
 }
 function renderPhotoOverlay() {
   // Bottles (and anything not yet classified) must never get a line, no matter what liquidPhotoReady
-  // or usingFallbackShape happen to be - see currentContainerType's definition above.
+  // happens to be - see currentContainerType's definition above. Nor does a product with no real
+  // photo at all (liquidPhotoReady stays false in that case - see showNoOfficialPhoto()): there is no
+  // surface to draw a line on, so no line, ever.
   if (currentContainerType !== 'pouch') {
     $('#photoFractionLine').hidden = true; $('#usableTopGuide').hidden = true; $('#usableBottomGuide').hidden = true; return;
   }
-  const ready = liquidPhotoReady || usingFallbackShape;
-  const region = usingFallbackShape ? { top: 10, bottom: 90 } : usableRegion;
+  const region = usableRegion;
   const line = $('#photoFractionLine');
-  line.hidden = !ready || $('#liquidPhotoStage').hidden;
+  line.hidden = !liquidPhotoReady || $('#liquidPhotoStage').hidden;
   if (!line.hidden) {
     // Top-based: a pouch is torn open at the top and drunk from the top down, so "1/4" means "drink
     // down to the line 25% of the way from the top of the usable area" - not 25% up from the bottom.

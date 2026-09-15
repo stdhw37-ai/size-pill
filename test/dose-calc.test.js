@@ -145,7 +145,13 @@ test('positionInRange: 5개의 중립적 라벨만 사용하고 "적정/과량" 
     assert.ok(!/적정|부적정|과량|안전|위험|정상/.test(label), `금지된 단정 표현 없음: ${label}`);
   }
   assert.equal(positionInRange(NaN, 10, 15), null);
-  assert.equal(positionInRange(5, 10, 10), null, 'min===max인 잘못된 범위는 null');
+  // min===max는 "허가사항에 범위 없이 고정된 1회 용량"이라는 뜻으로 실제로 자주 나오는 유효한
+  // 입력이다(예: "1회 300mg", 범위가 아니라 정확히 300mg) - 잘못된 데이터로 취급해 비교를 포기하면
+  // 안 된다(에도스캡슐 등 고정 용량 약에서 재현된 실제 버그). 진짜로 잘못된(역전된) 범위만 null.
+  assert.equal(positionInRange(300, 300, 300).label, POSITION.IN_RANGE, '고정 용량과 정확히 일치하면 범위 내');
+  assert.equal(positionInRange(250, 300, 300).label, POSITION.BELOW, '고정 용량보다 적으면 낮음');
+  assert.equal(positionInRange(350, 300, 300).label, POSITION.ABOVE, '고정 용량보다 많으면 높음');
+  assert.equal(positionInRange(5, 10, 8), null, 'max < min처럼 실제로 뒤집힌 범위만 null');
 });
 
 test('요청 예시 그대로: 112mg 1회 / 체중 10kg -> 11.2mg/kg/회', () => {
@@ -287,6 +293,27 @@ test('요청 F: 자연어 단순 패턴만 신뢰 가능하게 구조화하고, 
 
   const capped = parseOfficialDosage('1일 4회를 초과하지 않는다.');
   assert.equal(capped.maxFrequencyPerDay, 4);
+});
+
+// 실제 재현된 버그: 에도스캡슐(에르도스테인) 처방 - "1캡슐 × 하루 2회 × 60일". 성분함량(300mg/캡슐)과
+// 처방 1회량(1캡슐)까지는 계산됐지만, 공식 용법·용량이 "1회 1캡슐(300 mg)씩"처럼 정/캡슐 개수 뒤
+// 괄호 안에 mg를 적는 매우 흔한 문장 형태라 mg 패턴이 매칭되지 않았고, 그 결과 min===max인 고정
+// 용량(변화 없는 단일 값)까지 positionInRange가 "잘못된 범위"로 취급해 두 경로 모두 실패 -
+// "현재 정보만으로는 비교할 수 없습니다"로 끝나던 실제 원인이다.
+test('실제 재현된 버그: "1회 1캡슐(300 mg)씩"처럼 정/캡슐 개수 뒤 괄호 안 mg도 고정 용량으로 비교된다 (에도스캡슐)', () => {
+  const usageText = '성인은 1회 1캡슐(300 mg)씩, 1일 2~3회 복용합니다.\n\n급성 호흡기질환에 복용 시 연속으로 10일 이상 복용하지 않습니다.';
+  const official = parseOfficialDosage(usageText);
+  assert.deepEqual(official.singleDoseMg, { min: 300, max: 300 }, '괄호 안의 mg를 읽어야 한다');
+  assert.deepEqual(official.frequency, { min: 2, max: 3 });
+
+  const materials = '성분명 : 에르도스테인|분량 : 300|단위 : 밀리그램|규격 : 별규';
+  const result = analyzeDose({ ocr: { doseAmount: 1, doseUnit: 'tablet', frequencyPerDay: 2 }, kind: 'pill', materials, usageText, patientWeightKg: 77, patientAgeYears: 32 });
+  assert.equal(result.status, 'ok', '고정 용량도 실제로 비교가 이루어져야 한다');
+  const c = result.comparisons[0];
+  assert.equal(c.doseMg, 300); assert.equal(c.unit, 'mg/회');
+  assert.deepEqual(c.range, { min: 300, max: 300 });
+  assert.equal(c.comparisonStatus, COMPARISON_STATUS.WITHIN);
+  assert.equal(c.position.label, POSITION.IN_RANGE);
 });
 
 // --- DUR 투여기간주의 원문(N일) 파싱: 일반 허가 용법·용량과 완전히 별개의 출처/함수다 (요청 5/6) -------

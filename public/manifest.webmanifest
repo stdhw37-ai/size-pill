@@ -1,7 +1,7 @@
 {
-  "name": "알약 실물크기 측정기",
-  "short_name": "실물크기측정기",
-  "description": "알약의 장축·단축·두께를 실제 크기로 확인하는 화면 측정 도구",
+  "name": "내 약 확인하기",
+  "short_name": "내 약 확인하기",
+  "description": "약의 크기·맛·복용량·보관방법을 한 번에 확인하는 도구",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

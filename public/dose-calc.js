@@ -147,7 +147,10 @@ export function parseOfficialDosage(usageText) {
   const mlSingleAged = text.match(/([\d.]+)\s*mL\s*씩\s*복용/);
   // Plain absolute-mg single dose ("1회 300mg", "1회 250~500mg") - independent of the mg/kg pattern
   // above; the negative lookahead keeps a "10~15mg/kg" from also matching here as a false "10~15mg".
-  const mgSingle = text.match(/1\s*회[^()]*?([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*mg(?!\s*\/\s*kg)/);
+  // The optional "1캡슐(" prefix below matters a lot in practice: many real 허가사항 문장은 정/캡슐
+  // 개수 뒤 괄호 안에 mg를 적는다("1회 1캡슐(300 mg)씩") - [^()]*?는 '('를 절대 건너뛸 수 없어서
+  // 이 형태는 이전에 항상 매칭에 실패했다(에도스캡슐 등에서 재현된 실제 버그).
+  const mgSingle = text.match(/1\s*회[^()]*?(?:[\d.]+\s*(?:정|캡슐)\s*)?\(?\s*([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*mg(?!\s*\/\s*kg)/);
 
   const frequencyMatch = text.match(/1\s*일\s*([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*회/);
   const intervalMatch = text.match(/([\d.]+)(?:\s*[~∼-]\s*([\d.]+))?\s*시간\s*(?:마다|간격)/);
@@ -198,10 +201,16 @@ export const POSITION = {
 };
 // value's position within [min,max], expressed as one of the five neutral labels above (never a
 // verdict) plus the 0..1 fraction a range bar can use directly as its marker position.
+// min===max is a genuinely common, valid case - a fixed single-value official dose with no stated
+// range ("1회 300mg", not "1회 250~500mg") - and must still be comparable, not treated as malformed
+// input. Only max < min (an actually inverted/broken range) is rejected. This used to reject
+// min===max too, which silently produced "비교할 수 없습니다" for every fixed-dose product even
+// though the range itself parsed fine (실제 재현된 버그 - 에도스캡슐 등 고정 용량 약 전부 영향).
 export function positionInRange(value, min, max) {
-  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || max <= min) return null;
+  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || max < min) return null;
   if (value < min) return { label: POSITION.BELOW, fraction: 0 };
   if (value > max) return { label: POSITION.ABOVE, fraction: 1 };
+  if (max === min) return { label: POSITION.IN_RANGE, fraction: 0.5 };
   const fraction = (value - min) / (max - min);
   const label = fraction <= 0.2 ? POSITION.LOW_IN_RANGE : fraction >= 0.8 ? POSITION.HIGH_IN_RANGE : POSITION.IN_RANGE;
   return { label, fraction };
