@@ -13,6 +13,21 @@
   <link rel="stylesheet" href="/ui.css" />
 </head>
 <body>
+<svg hidden aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="20" y1="20" x2="15.3" y2="15.3"/></symbol>
+  <symbol id="ic-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/></symbol>
+  <symbol id="ic-pill" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4" transform="rotate(-32 12 12)"/><line x1="12" y1="6.6" x2="12" y2="17.4" transform="rotate(-32 12 12)"/></symbol>
+  <symbol id="ic-dose" viewBox="0 0 24 24"><ellipse cx="12" cy="16.5" rx="4.6" ry="2.8"/><path d="M12 13.7V4"/><path d="M9 4h6"/></symbol>
+  <symbol id="ic-taste" viewBox="0 0 24 24"><path d="M12 3.5c3 3.6 6 7.2 6 10.7a6 6 0 1 1-12 0c0-3.5 3-7.1 6-10.7z"/></symbol>
+  <symbol id="ic-ruler" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5"/><line x1="7" y1="8" x2="7" y2="11.5"/><line x1="11" y1="8" x2="11" y2="13"/><line x1="15" y1="8" x2="15" y2="11.5"/></symbol>
+  <symbol id="ic-box" viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z"/><path d="M4 8.5 12 13l8-4.5"/><line x1="12" y1="13" x2="12" y2="20"/></symbol>
+  <symbol id="ic-bulb" viewBox="0 0 24 24"><path d="M8.5 15.5a5 5 0 1 1 7 0c-.8.8-1.2 1.5-1.2 2.5h-4.6c0-1-.4-1.7-1.2-2.5z"/><line x1="10.2" y1="21" x2="13.8" y2="21"/></symbol>
+  <symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9h12v-9"/></symbol>
+  <symbol id="ic-doc" viewBox="0 0 24 24"><path d="M7 3.5h7l3 3v14h-10z"/><path d="M14 3.5v3h3"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="15.5" x2="15" y2="15.5"/></symbol>
+  <symbol id="ic-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6.3 7-6.3s7 2.7 7 6.3"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.4"/></symbol>
+</svg>
 <main class="app">
   <div id="networkBanner" class="network-banner" role="status" hidden>네트워크 연결을 확인해주세요.</div>
   <header class="top">
@@ -32,17 +47,17 @@
       <p class="greeting-hi">안녕하세요</p>
       <h2>오늘 어떤 약을 확인할까요?</h2>
     </div>
-    <button type="button" class="home-search-cta" data-mode="pill"><span aria-hidden="true">🔍</span>약 이름 검색하기</button>
+    <button type="button" class="home-search-cta" data-mode="pill"><svg class="icon" aria-hidden="true"><use href="#ic-search"/></svg>약 이름 검색하기</button>
     <button type="button" class="home-camera-cta" data-mode="prescription">
-      <span class="cta-line"><span aria-hidden="true">📷</span>처방전 촬영하기</span>
+      <span class="cta-line"><svg class="icon" aria-hidden="true"><use href="#ic-camera"/></svg>처방전 촬영하기</span>
       <small>사진 한 장으로 복용 중인 약을 정리해보세요.</small>
     </button>
     <div class="home-divider"></div>
     <div class="home-section-title">빠른 확인</div>
     <div class="quick-chip-row">
-      <button type="button" class="quick-chip" id="quickChipSize"><span class="quick-chip-label"><span aria-hidden="true">💊</span>크기 확인</span><small>정제 · 캡슐</small></button>
-      <button type="button" class="quick-chip" data-mode="liquid"><span class="quick-chip-label"><span aria-hidden="true">🥄</span>시럽·포 용량</span><small>시럽 · 포/스틱</small></button>
-      <button type="button" class="quick-chip" id="quickChipTaste"><span class="quick-chip-label"><span aria-hidden="true">🍓</span>맛/복용감</span><small>정제 · 시럽 · 산제</small></button>
+      <button type="button" class="quick-chip" id="quickChipSize"><svg class="icon" aria-hidden="true"><use href="#ic-pill"/></svg><span class="quick-chip-copy"><b>크기 확인</b><small>정제 · 캡슐</small></span></button>
+      <button type="button" class="quick-chip" data-mode="liquid"><svg class="icon" aria-hidden="true"><use href="#ic-dose"/></svg><span class="quick-chip-copy"><b>시럽·포 용량</b><small>시럽 · 포/스틱</small></span></button>
+      <button type="button" class="quick-chip" id="quickChipTaste"><svg class="icon" aria-hidden="true"><use href="#ic-taste"/></svg><span class="quick-chip-copy"><b>맛/복용감</b><small>정제 · 시럽 · 산제</small></span></button>
     </div>
     <div class="home-divider"></div>
     <div id="recentSection" hidden>
@@ -67,17 +82,36 @@
   </section>
 
   <!-- LOGIN -->
-  <section class="screen" id="screenLogin" hidden>
-    <div class="home-hero">
-      <h2>내 약 확인하기</h2>
-      <p>약 정보를 더 안전하고 편리하게 확인하세요.</p>
+  <section class="screen auth-screen" id="screenLogin" aria-labelledby="loginTitle" hidden>
+    <div class="login-brand"><div class="mark" aria-hidden="true"></div><span>내 약 확인하기</span></div>
+    <div class="login-intro">
+      <h2 id="loginTitle">내 약을<br>더 쉽게 확인하세요</h2>
+      <p>처방약부터 용량, 크기, 맛과 복용감까지<br>필요한 정보를 한곳에서 확인해보세요.</p>
     </div>
-    <div class="card" id="loginProviders"></div>
-    <p id="loginStatus" role="status" class="tip"></p>
+    <div id="loginProviders" aria-label="소셜 로그인"></div>
+    <p id="loginStatus" role="status" class="auth-status"></p>
+    <button type="button" id="loginRetry" class="link-btn" hidden>다시 확인하기</button>
+    <p class="login-legal">서비스의 <button type="button" data-consent-document="terms">이용약관</button> 및<br><button type="button" id="loginPrivacyLink">개인정보처리방침</button>을 확인해주세요.<br>필수 동의는 최초 가입 시 별도로 받습니다.</p>
+  </section>
+
+  <section class="screen auth-screen" id="screenConsent" aria-labelledby="consentTitle" hidden>
+    <p class="auth-step">처음 시작하기 · 1 / 2</p>
+    <h2 id="consentTitle">서비스 이용을 위해<br>확인이 필요해요.</h2>
+    <p class="auth-description">필수 항목을 확인해주세요.<br>선택 항목에 동의하지 않아도 이용할 수 있어요.</p>
+    <form id="consentForm">
+      <div class="consent-row"><label><input type="checkbox" id="consentTerms" required> <span>[필수] 이용약관</span></label><button type="button" data-consent-document="terms">보기</button></div>
+      <div class="consent-row"><label><input type="checkbox" id="consentPrivacy" required> <span>[필수] 개인정보 수집·이용</span></label><button type="button" data-consent-document="privacy">보기</button></div>
+      <div class="consent-row"><label><input type="checkbox" id="consentMarketing"> <span>[선택] 마케팅 정보 수신</span></label><button type="button" data-consent-document="marketing">보기</button></div>
+      <label class="consent-all"><input type="checkbox" id="consentAll"> 전체 동의</label>
+      <p id="consentStatus" class="auth-status" role="status"></p>
+      <button type="submit" id="consentNext" class="btn btn-primary">다음</button>
+    </form>
+    <button type="button" id="consentLogout" class="link-btn">로그아웃</button>
   </section>
 
   <!-- PROFILE: read mode by default, edit on demand -->
   <section class="screen" id="screenProfile" hidden>
+    <p class="auth-step" id="profileStep" hidden>처음 시작하기 · 2 / 2</p>
     <button type="button" class="back-btn" id="profileBackBtn" hidden>설정</button>
     <h2 id="profileTitle">프로필 설정</h2>
     <p class="tip" id="profileIntro">처방 용량 분석(체중·연령 기준 비교)에 사용할 기본 정보입니다. 값이 없어도 나머지 용량 분석은 그대로 동작합니다.</p>
@@ -119,7 +153,7 @@
       <p id="searchStatus" class="cal-note" role="status" aria-live="polite">식약처 낱알식별 정보에 등록된 제품을 검색합니다.</p>
     </div>
     <div class="search-bar-compact" id="searchBarCompact" hidden>
-      <button type="button" class="compact-search-btn" id="backToSearchFromResult">🔍 다른 약 검색하기</button>
+      <button type="button" class="compact-search-btn" id="backToSearchFromResult"><svg class="icon" aria-hidden="true"><use href="#ic-search"/></svg>다른 약 검색하기</button>
     </div>
 
     <section class="search-panel" id="searchPanel" aria-labelledby="input-title">
@@ -144,10 +178,10 @@
         </div>
 
         <div id="coreInfoCard" class="summary-info-grid" hidden>
-          <div class="info-cell"><span class="info-ic" aria-hidden="true">📏</span><div class="info-body"><span class="info-label">크기</span><div id="sizeSummary" class="size-summary" hidden></div></div></div>
-          <div class="info-cell"><span class="info-ic" aria-hidden="true">👅</span><div class="info-body"><span class="info-label">맛·복용감</span><p class="flavor-badge" id="flavorBadge" hidden><span id="flavorChips"></span></p></div></div>
-          <div class="info-cell"><span class="info-ic" aria-hidden="true">🥄</span><div class="info-body"><span class="info-label">복용방법</span><span id="coreInfoDose">정보 없음</span></div></div>
-          <div class="info-cell"><span class="info-ic" aria-hidden="true">📦</span><div class="info-body"><span class="info-label">보관방법</span><span id="coreInfoStorage">정보 없음</span></div></div>
+          <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-ruler"/></svg><div class="info-body"><span class="info-label">크기</span><div id="sizeSummary" class="size-summary" hidden></div></div></div>
+          <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-taste"/></svg><div class="info-body"><span class="info-label">맛·복용감</span><p class="flavor-badge" id="flavorBadge" hidden><span id="flavorChips"></span></p></div></div>
+          <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-dose"/></svg><div class="info-body"><span class="info-label">복용방법</span><span id="coreInfoDose">정보 없음</span></div></div>
+          <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-box"/></svg><div class="info-body"><span class="info-label">보관방법</span><span id="coreInfoStorage">정보 없음</span></div></div>
         </div>
         <button type="button" id="coreInfoMore" class="link-btn summary-more" hidden>제품 상세정보 보기 ↓</button>
       </div>
@@ -209,7 +243,7 @@
     <div class="chip-row"><span>분석 기준: <b id="rxProfileSummaryText">불러오는 중…</b></span><button type="button" id="rxProfileEditBtn" class="link-btn">수정</button></div>
 
     <div class="card rx-registration">
-      <div class="upload-zone"><span class="upload-symbol" aria-hidden="true">＋</span><h3>처방전을 등록해주세요</h3><p>약 이름과 복용량이 잘 보이도록 촬영해주세요.</p><div class="flow-actions"><label class="file-button btn-primary">📷 처방전 촬영<input id="rxCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="rxPhoto" type="file" accept="image/*"></label><button type="button" id="rxCancel" hidden>분석 취소</button></div></div>
+      <div class="upload-zone"><span class="upload-symbol" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#ic-plus"/></svg></span><h3>처방전을 등록해주세요</h3><p>약 이름과 복용량이 잘 보이도록 촬영해주세요.</p><div class="flow-actions"><label class="file-button btn-primary"><svg class="icon" aria-hidden="true"><use href="#ic-camera"/></svg>처방전 촬영<input id="rxCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="rxPhoto" type="file" accept="image/*"></label><button type="button" id="rxCancel" hidden>분석 취소</button></div></div>
       <p class="tip">이미지는 분석 후 저장하지 않습니다. <button type="button" id="rxPrivacyMore" class="link-btn">자세히 보기</button></p>
       <p class="tip" id="rxPrivacyDetail" hidden>처방전에는 이름·병원·주민정보가 포함될 수 있습니다. 약 이름과 투여량·횟수·일수 헤더가 포함된 표 부분을 촬영해주세요. AI 분석이 가능할 때는 이미지를 서버로 전송해 분석하며, 분석 직후 즉시 폐기하고 어떤 데이터베이스에도 저장하지 않습니다. AI 분석을 쓸 수 없을 때는 기기 안에서만 분석하며 서버로 전송되지 않습니다. 어느 경우든 이미지를 영구 저장하지 않습니다. 사진 보관함의 원본은 유지됩니다.</p>
       <p id="rxStatus" role="status" aria-live="polite"></p>
@@ -280,9 +314,9 @@
     <section id="bottleNotice" class="card" hidden>
       <h2 id="bottleProductName"></h2><p id="bottleProductCompany"></p><p id="bottleProductPackaging" class="cal-note" hidden></p>
       <div id="bottleCoreInfoCard" class="summary-info-grid" hidden>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">🍓</span><div class="info-body"><span class="info-label">맛/향</span><p id="bottleProductFlavor" hidden></p></div></div>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">🥄</span><div class="info-body"><span class="info-label">복용방법·횟수</span><span id="bottleCoreInfoDose">정보 없음</span></div></div>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">📦</span><div class="info-body"><span class="info-label">보관방법</span><span id="bottleCoreInfoStorage">정보 없음</span></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-taste"/></svg><div class="info-body"><span class="info-label">맛/향</span><p id="bottleProductFlavor" hidden></p></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-dose"/></svg><div class="info-body"><span class="info-label">복용방법·횟수</span><span id="bottleCoreInfoDose">정보 없음</span></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-box"/></svg><div class="info-body"><span class="info-label">보관방법</span><span id="bottleCoreInfoStorage">정보 없음</span></div></div>
       </div>
       <p id="bottlePhotoStatus" role="status"></p>
       <div class="liquid-photo-stage">
@@ -312,10 +346,10 @@
     <section id="liquidGuide" class="card" hidden>
       <h2 id="liquidName"></h2><p id="liquidCompany"></p>
       <div id="liquidCoreInfoCard" class="summary-info-grid" hidden>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">🍓</span><div class="info-body"><span class="info-label">맛/향</span><p id="liquidFlavor" hidden></p></div></div>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">🥄</span><div class="info-body"><span class="info-label">복용방법·횟수</span><span id="liquidCoreInfoDose">정보 없음</span></div></div>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">💡</span><div class="info-body"><span class="info-label">복용 팁</span><span id="liquidCoreInfoTip">정보 없음</span></div></div>
-        <div class="info-cell"><span class="info-ic" aria-hidden="true">📦</span><div class="info-body"><span class="info-label">보관방법</span><span id="liquidCoreInfoStorage">정보 없음</span></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-taste"/></svg><div class="info-body"><span class="info-label">맛/향</span><p id="liquidFlavor" hidden></p></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-dose"/></svg><div class="info-body"><span class="info-label">복용방법·횟수</span><span id="liquidCoreInfoDose">정보 없음</span></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-bulb"/></svg><div class="info-body"><span class="info-label">복용 팁</span><span id="liquidCoreInfoTip">정보 없음</span></div></div>
+        <div class="info-cell"><svg class="icon info-ic" aria-hidden="true"><use href="#ic-box"/></svg><div class="info-body"><span class="info-label">보관방법</span><span id="liquidCoreInfoStorage">정보 없음</span></div></div>
       </div>
       <p id="liquidPackagingSummary" class="cal-note" hidden></p>
 
@@ -330,11 +364,11 @@
             <div id="usableBottomGuide" class="usable-guide" hidden></div>
             <div id="photoFractionLine" class="photo-fraction-line" hidden><span id="photoFractionLabel">1/2</span></div>
           </div>
-          <button type="button" id="liquidPhotoZoom" class="photo-zoom-btn" hidden>🔍 크게 보기</button>
+          <button type="button" id="liquidPhotoZoom" class="photo-zoom-btn" hidden><svg class="icon" aria-hidden="true"><use href="#ic-search"/></svg>크게 보기</button>
         </div>
         <div id="liquidUploadOwnPrompt" class="no-photo-state" hidden>
           <p>제품 사진이 아직 없어요</p>
-          <div class="flow-actions"><label class="file-button">📷 내 제품 사진으로 확인<input id="liquidOwnCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="liquidOwnFile" type="file" accept="image/*"></label></div>
+          <div class="flow-actions"><label class="file-button"><svg class="icon" aria-hidden="true"><use href="#ic-camera"/></svg>내 제품 사진으로 확인<input id="liquidOwnCamera" type="file" accept="image/*" capture="environment"></label><label class="file-button">사진에서 선택<input id="liquidOwnFile" type="file" accept="image/*"></label></div>
         </div>
         <p id="liquidImageSource" class="cal-note"></p>
         <p class="guide-notice">대략적인 위치를 보여드려요. 정확한 용량은 계량도구를 사용해주세요.</p>
@@ -406,7 +440,7 @@
             <div id="uploadUsableBottomGuide" class="usable-guide" hidden></div>
             <div id="uploadFractionLine" class="photo-fraction-line"><span id="uploadFractionLabel">1/2</span></div>
           </div>
-          <button type="button" id="uploadPhotoZoom" class="photo-zoom-btn">🔍 크게 보기</button>
+          <button type="button" id="uploadPhotoZoom" class="photo-zoom-btn"><svg class="icon" aria-hidden="true"><use href="#ic-search"/></svg>크게 보기</button>
         </div>
         <p class="guide-notice">대략적인 위치를 보여드려요. 정확한 용량은 계량도구를 사용해주세요.</p>
         <button type="button" id="uploadAdjustCropAgain" class="link-btn">영역 다시 지정</button>
@@ -442,10 +476,10 @@
   </section>
 
   <nav class="bottom-nav" aria-label="주요 메뉴">
-    <button type="button" data-mode="home"><span class="nav-ic">🏠</span><span>홈</span></button>
-    <button type="button" data-mode="prescription"><span class="nav-ic">📄</span><span>처방전</span></button>
-    <button type="button" data-mode="pill"><span class="nav-ic">💊</span><span>약 검색</span></button>
-    <button type="button" data-mode="settings"><span class="nav-ic">👤</span><span>내 정보</span></button>
+    <button type="button" data-mode="home"><svg class="icon nav-ic" aria-hidden="true"><use href="#ic-home"/></svg><span>홈</span></button>
+    <button type="button" data-mode="prescription"><svg class="icon nav-ic" aria-hidden="true"><use href="#ic-doc"/></svg><span>처방전</span></button>
+    <button type="button" data-mode="pill"><svg class="icon nav-ic" aria-hidden="true"><use href="#ic-pill"/></svg><span>약 검색</span></button>
+    <button type="button" data-mode="settings"><svg class="icon nav-ic" aria-hidden="true"><use href="#ic-user"/></svg><span>내 정보</span></button>
   </nav>
 
   <dialog id="photoModal" class="photo-modal">

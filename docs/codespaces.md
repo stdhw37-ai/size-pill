@@ -26,12 +26,19 @@ GitHub에 로그인한 브라우저에서 `Codespaces (Private)` 링크를 클�
 서버를 사용하는 동안 터미널을 열어 두세요. `Ctrl+C`로 종료합니다.
 같은 시작 명령을 다시 실행하면 기존 개발서버를 정리하고 다시 시작합니다.
 
-`.devcontainer/devcontainer.json`에는 8787 자동 포워딩,
-`size-pill dev` 라벨, `openBrowser`가 설정되어 있습니다.
-이 설정은 새 컨테이너 생성 또는 컨테이너 재빌드 시 적용됩니다.
-기존 컨테이너에서도 시작 스크립트가 Private 포트 설정을 수행하므로
-서버 시작과 접속 링크 사용을 위해 재빌드를 먼저 할 필요는 없습니다.
-브라우저 자동 열기와 라벨 적용은 VS Code의 devcontainer 설정 반영 여부에 따릅니다.
+`.devcontainer/devcontainer.json`에는 8787 자동 포워딩과
+`내 약 확인하기` 라벨, `onAutoForward: silent`가 설정되어 있습니다.
+포트 포워딩은 유지하되 브라우저나 미리보기 탭은 자동으로 열지 않습니다.
+기존 Codespace에 남아 있는 `openBrowser` 설정도 덮어쓰도록
+`.vscode/settings.json`의 `remote.portsAttributes`에 같은 8787 설정을 둡니다.
+`npm run dev`는 빌드 후 Wrangler 서버만 시작하며 `--open`을 사용하지 않습니다.
+
+개발 검증은 localhost curl 또는 headless browser를 우선합니다.
+브라우저 자동화에서는 하나의 browser/page를 재사용하고 종료 시 close합니다.
+사용자가 이미 연 개발 페이지는 서버 재시작 후 그 탭에서 새로고침합니다.
+
+`silent`는 자동 포워딩 시 별도 동작을 하지 않는 유효한 값입니다:
+[Dev Container 공식 스키마](https://github.com/devcontainers/spec/blob/main/schemas/devContainer.base.schema.json).
 
 포워딩과 visibility는
 [GitHub Codespaces 공식 안내](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace)에

@@ -34,7 +34,7 @@ function setup(t, fetcher = async () => Response.json(payload()), { skipAuthGate
   // prescriptions.js도 auth.js/dose-calc.js와 같은 이유로 이 하네스에서 동적 import()가 실패한다(happy
   // -dom의 disableJavaScriptFileLoading) - setPrescriptionsApi로 실제(Node import) 모듈을 직접 주입해
   // loadPrescriptionsApi()의 동적 import를 우회한다. 저장/조회 로직 자체는 이 실제 모듈이 수행한다.
-  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, setPrescriptionsApi(value) { prescriptionsApi = value; }, setDoseCalc(value) { doseCalc = value; }, setRxDailyCalc(value) { rxDailyCalc = value; }, setPatientAgeYears(value) { patientAgeYears = value; }, getGroups() { return rxGroups; }, getPatientAgeYears() { return patientAgeYears; }, getPatientWeightKg() { return patientWeightKg; }, setPatientWeightKg(kg) { patientWeightKg = kg; }, getAuthGateOpen() { return authGateOpen; }, getCurrentProfile() { return currentProfile; }, applyAuthResolution(resolvedAuthApi, session, profile, config) { return applyAuthResolution(resolvedAuthApi, session, profile, config); }, setFlowSearchTimeoutMs(ms) { FLOW_SEARCH_TIMEOUT_MS = ms; } };');
+  window.eval(script + '\nwindow.__rxTest = { setMedSchema(value) { medSchema = value; }, setPrescriptionsApi(value) { prescriptionsApi = value; }, setDoseCalc(value) { doseCalc = value; }, setRxDailyCalc(value) { rxDailyCalc = value; }, setPatientAgeYears(value) { patientAgeYears = value; }, getGroups() { return rxGroups; }, getPatientAgeYears() { return patientAgeYears; }, getPatientWeightKg() { return patientWeightKg; }, setPatientWeightKg(kg) { patientWeightKg = kg; }, getAuthGateOpen() { return authGateOpen; }, getCurrentProfile() { return currentProfile; }, applyAuthResolution(resolvedAuthApi, session, profile, config, consent) { return applyAuthResolution(resolvedAuthApi, session, profile, config, consent); }, setFlowSearchTimeoutMs(ms) { FLOW_SEARCH_TIMEOUT_MS = ms; } };');
   const $ = selector => window.document.querySelector(selector);
   const input = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input')); };
   const submit = async () => { $('#searchForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle(); };
@@ -99,6 +99,53 @@ test('업체명·품목번호 필터를 페이지 이동에도 유지한다', as
     assert.equal(params.has('serviceKey'), false);
   }
   assert.equal($('#nextPage').disabled, true);
+});
+
+test('약 검색 목록은 light=1로 가벼운 데이터만 요청하고, 항목별 허가정보를 미리 받아오지 않는다', async t => {
+  const calls = [];
+  const { $, input, submit } = setup(t, async path => {
+    const url = new URL(path, 'https://size-pill.example');
+    calls.push(url.pathname + url.search);
+    if (url.pathname === '/api/liquids') return Response.json(payload([], 1, 0));
+    return Response.json(payload());
+  });
+  input('#query', '시험약'); await submit();
+  const medicineCall = calls.find(c => c.startsWith('/api/medicines'));
+  assert.ok(medicineCall.includes('light=1'), '목록 검색은 light=1이어야 한다');
+  assert.equal(calls.length, 2, `목록 검색은 /api/medicines·/api/liquids 각 1회여야 한다 (실제: ${calls.length})`);
+});
+
+test('검색 목록에서 선택한 제품의 상세(허가정보·e약은요)는 선택 시점에만 지연 조회한다', async t => {
+  const light = { ...complete, permit: { status: 'not_requested', data: null }, easy: { status: 'not_requested', data: null } };
+  const calls = [];
+  const { $, submit, input } = setup(t, async path => {
+    const url = new URL(path, 'https://size-pill.example');
+    calls.push(url.pathname + url.search);
+    if (url.pathname === '/api/liquids') return Response.json(payload([], 1, 0));
+    if (url.searchParams.get('item_seq') === light.id) {
+      return Response.json(payload([{ ...light, permit: { status: 'ok', data: { storage: '실온보관' } }, easy: { status: 'ok', data: { usage: '1일 2회 복용' } } }], 1, 1));
+    }
+    return Response.json(payload([light]));
+  });
+  input('#query', '시험약'); await submit();
+  assert.equal(calls.filter(c => c.includes('item_seq=' + light.id)).length, 0, '목록 조회 단계에서는 item_seq 단일 조회가 없어야 한다');
+  $('#results button').click();
+  await settle();
+  assert.ok(calls.some(c => c.includes('item_seq=' + light.id)), '제품을 선택하면 item_seq로 상세를 지연 조회해야 한다');
+  assert.ok($('#coreInfoStorage').textContent.includes('실온보관'), '지연 조회한 보관방법이 핵심정보 카드에 반영되어야 한다');
+});
+
+test('같은 검색어로 버튼을 연달아 눌러도(진행 중) 중복 request가 발생하지 않는다', async t => {
+  let calls = 0, resolveFirst;
+  const first = new Promise(resolve => { resolveFirst = resolve; });
+  const { input, window, $ } = setup(t, async () => { calls++; await first; return Response.json(payload()); });
+  input('#query', '시험약');
+  $('#searchForm').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle();
+  $('#searchForm').dispatchEvent(new window.Event('submit', { cancelable: true })); // 진행 중에 다시 제출
+  resolveFirst();
+  await settle();
+  assert.equal(calls, 2, '동일 조건이 진행 중일 때 재제출은 추가 request를 만들지 않아야 한다(medicines+liquids 각 1회)');
 });
 
 test('이미지 오류와 빈 결과·API 오류를 안내한다', async t => {
@@ -1125,16 +1172,17 @@ test('로그인 게이트: 로그인했지만 프로필이 없으면 온보딩 �
   const { window, $ } = setup(t, undefined, { skipAuthGate: false, manualAuth: true });
   const session = { accessToken: fakeAccessToken('user-1'), refreshToken: 'r1', expiresAt: Date.now() + 3600_000 };
   const next = window.__rxTest.applyAuthResolution(auth, session, null, FAKE_CONFIG);
-  assert.equal(next, 'profile-onboarding');
-  assert.equal($('#screenProfile').hidden, false);
-  assert.equal($('#profileBackBtn').hidden, true, '최초 온보딩에는 뒤로가기가 없다 - 건너뛸 수 없다');
-  assert.equal($('#profileTitle').textContent, '프로필 설정');
+  assert.equal(next, 'consent-onboarding');
+  assert.equal($('#screenConsent').hidden, false);
+  assert.equal($('#screenProfile').hidden, true);
+  assert.equal($('#consentNext').disabled, true);
   assert.equal(window.__rxTest.getAuthGateOpen(), true);
   $('[data-mode="home"]').click();
   assert.equal($('#screenHome').hidden, true, '온보딩을 마치기 전에는 홈으로 넘어갈 수 없다');
 });
 
 test('프로필 저장: 체중은 0 이하/비현실적으로 큰 값을 거부하고, 저장하면 홈으로 전환되며 생년월일·체중이 dose analysis에 바로 연결된다', async t => {
+  const consent = publishTestDocuments(t);
   const savedRows = [];
   const { window, $ } = setup(t, async (url, init) => {
     if (String(url).includes('/rest/v1/profiles') && init?.method === 'POST') {
@@ -1143,7 +1191,7 @@ test('프로필 저장: 체중은 0 이하/비현실적으로 큰 값을 거부�
     return Response.json(payload());
   }, { skipAuthGate: false, manualAuth: true });
   const session = { accessToken: fakeAccessToken('user-1'), refreshToken: 'r1', expiresAt: Date.now() + 3600_000 };
-  window.__rxTest.applyAuthResolution(auth, session, null, FAKE_CONFIG);
+  window.__rxTest.applyAuthResolution(auth, session, null, FAKE_CONFIG, consent);
 
   const submit = async () => { $('#profileForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle(); };
   $('#profileWeight').value = '-5'; $('#profileWeight').dispatchEvent(new window.Event('input')); await submit();
@@ -1381,4 +1429,55 @@ test('공식 원문 있음·정보 없음·조회 실패를 구분하고 현재 
   installRx(window,[{...dailyCapsule,easy:{status,data:{usage}}}]);$('#rxSelectedList .rx-row-button').click();$('#rxDetailDialog .rx-action-analyze').click();await settle();
   assert.equal($('.rx-daily-total').textContent,'600 mg/일');assert.ok($('#rxDetailDialog').textContent.includes(message));assert.equal($('.rx-daily-bar'),null);
  }
+});
+
+// Only test fixtures publish documents; production remains blocked until reviewed URLs exist.
+function publishTestDocuments(t) {
+  const original = structuredClone(auth.CONSENT_DOCUMENTS);
+  for (const [key, doc] of Object.entries(auth.CONSENT_DOCUMENTS)) Object.assign(doc, { version: 'test-v1', url: `/test-policies/${key}` });
+  t.after(() => { for (const key of Object.keys(original)) Object.assign(auth.CONSENT_DOCUMENTS[key], original[key]); });
+  return { terms: { accepted: true, version: 'test-v1' }, privacy: { accepted: true, version: 'test-v1' }, marketing: { accepted: false, version: 'test-v1' } };
+}
+test('신규 가입: 필수 동의 → 기존 프로필 입력 → 홈, 선택 거절 저장, 재로그인은 동의 생략', async t => {
+  publishTestDocuments(t);
+  const calls = [];
+  const { window, $ } = setup(t, async (url, init) => {
+    calls.push(String(url));
+    if (String(url).endsWith('/auth/v1/user')) return Response.json({ user_metadata: JSON.parse(init.body).data });
+    if (String(url).includes('/rest/v1/profiles')) return Response.json(JSON.parse(init.body));
+    return Response.json({});
+  }, { skipAuthGate: false, manualAuth: true });
+  const session = { accessToken: fakeAccessToken('new-user') };
+  window.__rxTest.applyAuthResolution(auth, session, null, FAKE_CONFIG);
+  assert.equal($('#consentNext').disabled, true);
+  $('#consentAll').click();
+  assert.equal($('#consentMarketing').checked, true);
+  $('#consentMarketing').click();
+  assert.equal($('#consentAll').indeterminate, true);
+  assert.equal($('#consentNext').disabled, false);
+  $('#consentForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle();
+  assert.equal($('#screenProfile').hidden, false);
+  assert.equal($('#profileSave').textContent, '시작하기');
+  assert.equal($('#profileBirthDate').value, '');
+  $('#profileForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle();
+  assert.equal($('#screenHome').hidden, false);
+  assert.equal(calls.filter(url => url.includes('/auth/v1/user')).length, 1);
+  assert.equal(calls.filter(url => url.includes('/rest/v1/profiles')).length, 1);
+  assert.equal(window.__rxTest.getCurrentProfile().user_id, 'new-user');
+  window.__rxTest.applyAuthResolution(auth, session, { user_id: 'new-user' }, FAKE_CONFIG);
+  assert.equal($('#screenHome').hidden, false);
+});
+test('동의 저장 실패 시 입력 유지 및 재시도, 프로필 제출로 동의를 건너뛸 수 없다', async t => {
+  publishTestDocuments(t);
+  const { window, $ } = setup(t, async () => new Response(null, { status: 503 }), { skipAuthGate: false, manualAuth: true });
+  window.__rxTest.applyAuthResolution(auth, { accessToken: fakeAccessToken('me') }, null, FAKE_CONFIG);
+  $('#consentAll').click();
+  $('#consentForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle();
+  assert.equal($('#screenConsent').hidden, false);
+  assert.equal($('#consentTerms').checked, true);
+  assert.equal($('#consentNext').disabled, false);
+  assert.match($('#consentStatus').textContent, /저장하지 못/);
+  $('#profileForm').dispatchEvent(new window.Event('submit', { cancelable: true })); await settle();
+  assert.equal($('#screenConsent').hidden, false);
+  assert.equal($('#screenHome').hidden, true);
 });

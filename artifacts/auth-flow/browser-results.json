@@ -1,0 +1,37 @@
+[
+  {
+    "scenario": "live Google login entry",
+    "host": "accounts.google.com",
+    "path": "/v3/signin/identifier",
+    "title": "Sign in - Google Accounts",
+    "identifierPrompt": "Email or phone",
+    "oauthCompleted": false
+  },
+  {
+    "scenario": "mocked OAuth session + real app flow",
+    "checks": [
+      "consent required",
+      "marketing declined",
+      "consent save retry",
+      "resume after reload",
+      "profile save retry",
+      "existing user direct home",
+      "profile fetch error does not onboard",
+      "logout clears session"
+    ],
+    "writes": [
+      "consent",
+      "profile"
+    ],
+    "errors": []
+  },
+  {
+    "scenario": "responsive login",
+    "widths": [
+      320,
+      390,
+      768
+    ],
+    "horizontalOverflow": false
+  }
+]

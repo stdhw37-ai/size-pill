@@ -1,0 +1,71 @@
+{
+  "resolved": false,
+  "stage": "before upstream HTTP response",
+  "requests": [
+    {
+      "query": "타이레놀",
+      "apiKey": "present",
+      "light": true,
+      "endpoint": "https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03",
+      "upstreamStatus": null,
+      "contentType": null,
+      "responseParse": "not_started",
+      "rawItems": null,
+      "normalizedItems": null,
+      "returnedItems": 0,
+      "error": "TimeoutError"
+    },
+    {
+      "query": "타이레놀",
+      "apiKey": "present",
+      "light": true,
+      "endpoint": "https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03",
+      "upstreamStatus": null,
+      "contentType": null,
+      "responseParse": "not_started",
+      "rawItems": null,
+      "normalizedItems": null,
+      "returnedItems": 0,
+      "error": "TimeoutError"
+    },
+    {
+      "query": "타이레놀",
+      "apiKey": "present",
+      "light": false,
+      "endpoint": "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtPrmsnDtlInq06",
+      "upstreamStatus": null,
+      "contentType": null,
+      "responseParse": "not_started",
+      "rawItems": null,
+      "normalizedItems": null,
+      "returnedItems": 0,
+      "error": "TimeoutError"
+    },
+    {
+      "query": "타이레놀",
+      "apiKey": "present",
+      "light": true,
+      "endpoint": "https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03",
+      "upstreamStatus": null,
+      "contentType": null,
+      "responseParse": "not_started",
+      "rawItems": null,
+      "normalizedItems": null,
+      "returnedItems": 0,
+      "error": "TimeoutError"
+    }
+  ],
+  "directCurl": {
+    "exitCode": 28,
+    "httpStatus": "000",
+    "tcpConnected": false,
+    "dnsIPv4": "27.101.236.63",
+    "publicResolversAgree": true
+  },
+  "browserAutoOpen": {
+    "devcontainer": "silent",
+    "workspace": "silent",
+    "devCommand": "npm run build && wrangler dev",
+    "browserOpenedByAgent": false
+  }
+}

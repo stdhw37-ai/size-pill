@@ -150,16 +150,32 @@ export default {
     const q = (url.searchParams.get('item_name') ?? url.searchParams.get('q') ?? '').trim().normalize('NFC');
     const company = (url.searchParams.get('entp_name') || '').trim().normalize('NFC');
     const itemId = (url.searchParams.get('item_seq') || '').trim();
+    // 검색 목록(light=1)은 목록 표시에 필요한 낱알식별 데이터만 반환한다 - 항목마다 허가정보·e약은요를
+    // 추가 조회하지 않는다(아래 enrichMedicines 참고). 기본값(light 미지정)은 기존 호출자(처방전 제품
+    // 매칭, "약 직접 추가" 등)와 완전히 동일하게 동작한다 - 하위 호환을 위해 opt-in으로만 둔다.
+    const light = url.searchParams.get('light') === '1';
     const page = Number(url.searchParams.get('pageNo') ?? url.searchParams.get('page') ?? 1);
     const pageSize = Number(url.searchParams.get('numOfRows') ?? 20);
-    if ((!q && !company && !itemId) || (q && q.length < 2) || q.length > 80 || company.length > 80 || /[\x00-\x1f\x7f]/.test(q + company) || (itemId && !/^\d{1,20}$/.test(itemId))) return json({ error: '약 이름은 2~80자, 업체명은 80자 이하, 품목일련번호는 숫자로 입력해주세요. 검색 조건이 하나 이상 필요합니다.' }, 400);
+    // 품목기준코드(ITEM_SEQ)는 항상 숫자만은 아니다 - 실제 제품허가정보(액상 등) 데이터셋에는
+    // "M105518"처럼 문자 접두가 붙은 값도 있다. 숫자만 허용하던 이전 검증은 이런 제품의 단일 조회
+    // (item_seq 기반 재조회 - 용량 확인의 공식 용법·용량 fetch가 여기 의존한다)를 매번 400으로
+    // 막아 "공식 정보를 불러오지 못했어요"로 잘못 보이게 했다 - 실제로는 데이터가 있는데 우리 쪽
+    // 입력 검증이 막은 것이었다.
+    if ((!q && !company && !itemId) || (q && q.length < 2) || q.length > 80 || company.length > 80 || /[\x00-\x1f\x7f]/.test(q + company) || (itemId && !/^[A-Za-z0-9]{1,20}$/.test(itemId))) return json({ error: '약 이름은 2~80자, 업체명은 80자 이하, 품목일련번호는 영문·숫자로 입력해주세요. 검색 조건이 하나 이상 필요합니다.' }, 400);
     if (!Number.isInteger(page) || page < 1 || page > 100 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 20) return json({ error: '페이지는 1~100, 결과 수는 1~20 사이의 정수여야 합니다.' }, 400);
     if (env.SEARCH_LIMITER) {
       const { success } = await env.SEARCH_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
       if (!success) return json({ error: '검색이 너무 잦습니다. 1분 뒤 다시 시도해주세요.' }, 429);
     }
-    if (!env.MFDS_SERVICE_KEY) return json({ error: '의약품 검색 연결을 준비 중입니다. 잠시 후 다시 이용해주세요.' }, 503);
-    const key = await cacheKey(liquid ? ['liquid-v1', q, company, itemId, page, pageSize] : [q, company, itemId, page, pageSize]);
+    // Temporary, development-only diagnostics: never log the key, URL query, or response body.
+    const searchDebug = ['127.0.0.1', 'localhost'].includes(url.hostname) || url.hostname.endsWith('.app.github.dev');
+    const diagnostic = { query: q, apiKey: env.MFDS_SERVICE_KEY ? 'present' : 'missing', light,
+      endpoint: liquid ? SOURCES.permit.endpoint : ENDPOINT, upstreamStatus: null, contentType: null,
+      responseParse: 'not_started', rawItems: null, normalizedItems: null, returnedItems: 0, error: null };
+    const logSearch = () => { if (searchDebug) console.log('[medicine-search]', JSON.stringify(diagnostic)); };
+    if (!env.MFDS_SERVICE_KEY) { diagnostic.error = 'MissingApiKey'; logSearch(); return json({ error: '의약품 검색 연결을 준비 중입니다. 잠시 후 다시 이용해주세요.' }, 503); }
+
+    const key = await cacheKey(liquid ? ['liquid-v1', q, company, itemId, page, pageSize] : [q, company, itemId, page, pageSize, light ? 'light' : 'full']);
     let db;
     try { db = database(env); } catch { /* Optional cache must not block searches. */ }
     if (db) {
@@ -182,8 +198,11 @@ export default {
       if (company) upstream.searchParams.set('entp_name', company);
       if (itemId) upstream.searchParams.set('item_seq', itemId);
       const response = await fetch(upstream, { signal: AbortSignal.timeout(10000) });
+      diagnostic.upstreamStatus = response.status; diagnostic.contentType = response.headers.get('content-type');
       if (!response.ok) throw new Error('upstream');
+      diagnostic.responseParse = 'failure';
       const raw = await response.json();
+      diagnostic.responseParse = 'success';
       const data = raw.response ?? raw;
       if (!['00', '0'].includes(String(data.header?.resultCode))) throw new Error('upstream');
       const body = data.body;
@@ -191,6 +210,7 @@ export default {
       let items = body.items?.item ?? body.items ?? [];
       if (items === '') items = [];
       if (!Array.isArray(items)) items = [items];
+      diagnostic.rawItems = items.length;
       if (items.some(item => !item?.ITEM_SEQ || !item?.ITEM_NAME)) throw new Error('schema');
       if (items.length > pageSize || (Number(body.totalCount) === 0 && items.length)) throw new Error('schema');
       let merged;
@@ -200,15 +220,29 @@ export default {
         // 결과(최대 20개)까지 매번 조회하면 느려지므로, 처방 용량 분석 등 특정 제품 1건을 확인할 때만(item_seq
         // 지정 시) 가져온다 - 목록 조회 성능은 그대로 유지된다.
         if (itemId && merged.length === 1) merged[0].easy = await lookup('easy', itemId, serviceKey, AbortSignal.timeout(6000));
-      } else merged = await enrichMedicines(items.map(normalize), serviceKey);
+      } else {
+        const normalized = items.map(normalize);
+        // 낱알식별 이름 검색(최대 20개)마다 항목당 허가정보+e약은요를 전부 추가 조회하면(item당 2회,
+        // 최대 40회) 검색이 느려지고 식약처 API 호출 한도를 목록 조회만으로 소진해 이후 검색까지
+        // 실패하게 만든다 - 실제 병목이었다. light=1이면 목록에 필요한 데이터(이름/제조사/모양/치수 등,
+        // 이미 normalize()가 채운다)만 반환하고, 상세는 사용자가 실제로 제품을 선택했을 때
+        // item_seq 단일 조회로 지연 로딩한다(프런트엔드 ensureMedicineDetail).
+        merged = light ? normalized.map(item => ({ ...item, permit: { status: 'not_requested', data: null }, easy: { status: 'not_requested', data: null } }))
+          : await enrichMedicines(normalized, serviceKey);
+      }
+      diagnostic.normalizedItems = merged.length;
       const partial = merged.some(item => ['error', 'unmatched'].includes(item.permit.status) || ['error', 'unmatched'].includes(item.easy.status));
       const payload = { schemaVersion: CACHE_VERSION, partial, items: merged, total: Number(body.totalCount), page, pageSize, fetchedAt: new Date().toISOString(), source: liquid ? '식품의약품안전처 제품 허가정보' : '식품의약품안전처 낱알식별·제품 허가정보·e약은요' };
       if (db) {
         db.url.search = '?on_conflict=cache_key';
         ctx.waitUntil(fetch(db.url, { method: 'POST', headers: { ...db.headers, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: key, payload, expires_at: new Date(Date.now() + (partial ? 60 : TTL) * 1000).toISOString() }), signal: AbortSignal.timeout(2000) }).then(r => { if (!r.ok) console.warn('Search cache write unavailable'); }).catch(() => {}));
       }
+      diagnostic.returnedItems = payload.items.length; logSearch();
       return json(payload);
-    } catch {
+    } catch (error) {
+      diagnostic.error = error?.name || 'UnknownError';
+      if (['upstream', 'schema'].includes(error?.message)) diagnostic.error += ':' + error.message;
+      logSearch();
       return json({ error: '식약처 정보를 불러오지 못했습니다. 잠시 후 다시 검색해주세요.' }, 502);
     }
   }

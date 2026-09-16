@@ -1,0 +1,9 @@
+{
+  "remote.portsAttributes": {
+    "8787": {
+      "label": "내 약 확인하기",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    }
+  }
+}

@@ -99,12 +99,35 @@ test('업체명·품목일련번호·페이지 크기를 공식 요청변수에 
 });
 
 test('업체 또는 품목번호 단독 검색 및 잘못된 조건 차단', async () => {
-  for (const params of ['entp_name=회사', 'item_seq=123']) {
+  // 품목기준코드(ITEM_SEQ)는 순수 숫자만이 아니다 - 제품허가정보 데이터셋에는 "M105518"처럼
+  // 문자 접두가 붙은 실제 값도 있어, 영문+숫자 조합도 유효한 검색 조건으로 통과해야 한다.
+  for (const params of ['entp_name=회사', 'item_seq=123', 'item_seq=M105518']) {
     globalThis.fetch = async url => { assert.equal(url.searchParams.has('item_name'), false); return upstream(); };
     assert.equal((await worker.fetch(request(params), env, ctx)).status, 200);
   }
   globalThis.fetch = () => assert.fail('unexpected upstream request');
-  for (const params of ['item_seq=1x', 'q=시험약&numOfRows=101', 'q=시험약&numOfRows=0', 'q=시험약&pageNo=1.5', 'entp_name=%00', '', 'item_name=a']) assert.equal((await worker.fetch(request(params), env, ctx)).status, 400);
+  for (const params of ['item_seq=1 2', 'item_seq=' + 'a'.repeat(21), 'item_seq=1$x', 'q=시험약&numOfRows=101', 'q=시험약&numOfRows=0', 'q=시험약&pageNo=1.5', 'entp_name=%00', '', 'item_name=a']) assert.equal((await worker.fetch(request(params), env, ctx)).status, 400);
+});
+
+test('light=1 목록 검색은 항목별 허가정보·e약은요를 추가 조회하지 않는다', async () => {
+  const calls = [];
+  globalThis.fetch = async url => { calls.push(url.pathname); return upstream([item, { ...item, ITEM_SEQ: '124' }]); };
+  const response = await worker.fetch(request('q=시험약&light=1'), env, ctx);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.items.length, 2);
+  for (const row of data.items) { assert.equal(row.permit.status, 'not_requested'); assert.equal(row.easy.status, 'not_requested'); }
+  assert.equal(calls.length, 1, `목록 조회 1회만 발생해야 한다 (실제 호출: ${calls.length})`);
+});
+test('light 파라미터가 없으면(기존 호출자) 항목별 허가정보·e약은요 조회를 그대로 유지한다', async () => {
+  const calls = [];
+  globalThis.fetch = async url => { calls.push(url.pathname); return upstream(); };
+  const response = await worker.fetch(request('q=시험약'), env, ctx);
+  assert.equal(response.status, 200);
+  assert.ok(calls.length > 1, '기존 호출자(처방전 매칭 등)는 계속 항목별 상세를 받아야 한다');
+});
+test('light 검색과 기존 검색은 캐시 키가 분리된다', async () => {
+  assert.notEqual(await cacheKey(['시험약', '', '', 1, 20, 'light']), await cacheKey(['시험약', '', '', 1, 20, 'full']));
 });
 
 test('캐시 키는 모든 검색 조건과 응답 버전을 구분하고 필터 문자를 포함하지 않는다', async () => {

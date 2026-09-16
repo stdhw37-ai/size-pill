@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CONSENT_DOCUMENTS, consentDocumentsReady, hasRequiredConsent, fetchConsent, saveConsent, fetchProviderAvailability,
   OAUTH_PROVIDERS, buildAuthorizeUrl, parseSessionFromHash, isSessionExpired, refreshSession,
   resolveSession, signOut, userIdFromAccessToken, fetchProfile, saveProfile, ageYearsFromBirthDate,
   weightKgFromProfile, dosePatientFromProfile, decideGateScreen, loadConfig, _resetConfigCache
@@ -140,8 +141,7 @@ test('fetchProfile/saveProfile: 다른 사용자의 프로필을 지정할 방�
   assert.equal(savedHeaders.Prefer, 'resolution=merge-duplicates,return=representation');
   assert.ok(String(savedUrl).includes('/rest/v1/profiles'));
 
-  const noToken = await fetchProfile(CONFIG, { accessToken: 'garbage' }, async () => Response.json([]));
-  assert.equal(noToken, null, '토큰에서 sub을 읽지 못하면 아예 요청하지 않고 null');
+  await assert.rejects(fetchProfile(CONFIG, { accessToken: 'garbage' }, async () => { assert.fail('잘못된 토큰으로 요청하면 안 된다'); }), /로그인 정보/);
 });
 
 test('ageYearsFromBirthDate: 만 나이를 생일 기준으로 정확히 계산하고, 미래 날짜·빈 값은 null (나이 자체는 저장하지 않는다, 요청 5)', () => {
@@ -168,7 +168,7 @@ test('weightKgFromProfile/dosePatientFromProfile: 체중·나이를 dose analysi
 
 test('decideGateScreen: 비로그인->login, 로그인+프로필없음->onboarding, 프로필완료->home (요청 17의 시나리오와 1:1 대응)', () => {
   assert.equal(decideGateScreen(null, null), 'login');
-  assert.equal(decideGateScreen({ accessToken: 'at' }, null), 'profile-onboarding');
+  assert.equal(decideGateScreen({ accessToken: 'at' }, null), 'consent-onboarding');
   assert.equal(decideGateScreen({ accessToken: 'at' }, { user_id: 'u1' }), 'home');
 });
 
@@ -183,4 +183,66 @@ test('loadConfig: /api/auth/config가 비어있으면(설정 전) null - app.js�
   const networkDown = await loadConfig(async () => { throw new TypeError('offline'); });
   assert.equal(networkDown, null);
   _resetConfigCache();
+});
+
+function publishedDocuments(t) {
+  const original = structuredClone(CONSENT_DOCUMENTS);
+  for (const [key, doc] of Object.entries(CONSENT_DOCUMENTS)) Object.assign(doc, { version: 'test-v1', url: `/test-policies/${key}` });
+  t.after(() => { for (const key of Object.keys(original)) Object.assign(CONSENT_DOCUMENTS[key], original[key]); });
+}
+test('미등록 문서에는 동의할 수 없으며 기존 프로필 사용자는 홈으로 간다', async () => {
+  assert.equal(consentDocumentsReady(), false);
+  await assert.rejects(saveConsent(CONFIG, { accessToken: 'at' }, { terms: true, privacy: true }, () => assert.fail('미등록 문서는 저장 금지')));
+  assert.equal(decideGateScreen({ accessToken: 'at' }, { user_id: 'me' }), 'home');
+});
+test('약관 동의는 사용자 메타데이터에 문서 버전/URL/시각/선택 거절과 함께 저장하고 다시 읽는다', async t => {
+  publishedDocuments(t);
+  let stored;
+  const fetcher = async (url, init) => {
+    assert.equal(new URL(url).pathname, '/auth/v1/user');
+    assert.equal(init.headers.Authorization, 'Bearer at');
+    if (init.method === 'PUT') stored = JSON.parse(init.body).data.service_consent;
+    return Response.json({ user_metadata: { provider_id: 'untouched', service_consent: stored } });
+  };
+  const consent = await saveConsent(CONFIG, { accessToken: 'at' }, { terms: true, privacy: true, marketing: false }, fetcher);
+  assert.equal(consent.marketing.accepted, false);
+  assert.equal(consent.terms.version, 'test-v1');
+  assert.equal(consent.privacy.url, '/test-policies/privacy');
+  assert.ok(Number.isFinite(Date.parse(consent.accepted_at)));
+  assert.deepEqual(await fetchConsent(CONFIG, { accessToken: 'at' }, fetcher), consent);
+  assert.equal(decideGateScreen({ accessToken: 'at' }, null, consent), 'profile-onboarding');
+  assert.equal(hasRequiredConsent({ ...consent, privacy: { accepted: false, version: 'test-v1' } }), false);
+  assert.equal(hasRequiredConsent({ ...consent, terms: { accepted: true, version: 'old' } }), false);
+});
+test('동의 저장/조회 실패와 프로필 조회 실패를 신규 계정으로 간주하지 않는다', async t => {
+  publishedDocuments(t);
+  const session = { accessToken: fakeAccessToken('me') };
+  const failed = async () => Response.json({ message: 'unavailable' }, { status: 503 });
+  await assert.rejects(fetchProfile(CONFIG, session, failed));
+  await assert.rejects(fetchConsent(CONFIG, session, failed));
+  await assert.rejects(saveConsent(CONFIG, session, { terms: true, privacy: true }, failed));
+  await assert.rejects(saveConsent(CONFIG, session, { terms: true, privacy: true }, async () => Response.json({ user_metadata: {} })));
+  await assert.rejects(saveProfile(CONFIG, session, {}, async () => Response.json([])));
+});
+test('실제 공급자 활성화 상태를 읽고 Naver authorize 및 추가 scope를 허용하지 않는다', async () => {
+  const availability = await fetchProviderAvailability(CONFIG, async (url, init) => {
+    assert.equal(new URL(url).pathname, '/auth/v1/settings');
+    assert.equal(init.headers.apikey, CONFIG.anonKey);
+    return Response.json({ external: { google: true, kakao: false } });
+  });
+  assert.deepEqual(availability, { google: true, kakao: false });
+  assert.throws(() => buildAuthorizeUrl(CONFIG, 'naver', 'https://app.example'));
+  assert.equal(new URL(buildAuthorizeUrl(CONFIG, 'google', 'https://app.example')).searchParams.has('scopes'), false);
+});
+test('OAuth 취소 오류는 해시에서 제거하고 오류로 전달한다', async () => {
+  let cleared = false;
+  await assert.rejects(resolveSession(CONFIG, { hash: '#error=access_denied', storage: {}, clearHash: () => { cleared = true; } }), /취소/);
+  assert.equal(cleared, true);
+  assert.equal(parseSessionFromHash('#access_token=a&refresh_token=r'), null);
+});
+test('로그아웃 서버 실패는 로컬 종료와 구분해서 보고한다', async () => {
+  let removed = false;
+  const result = await signOut(CONFIG, { accessToken: 'at' }, async () => new Response(null, { status: 503 }), { removeItem() { removed = true; } });
+  assert.equal(removed, true);
+  assert.equal(result.remoteRevoked, false);
 });

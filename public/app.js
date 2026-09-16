@@ -34,6 +34,11 @@ window.addEventListener('offline', () => { const el = $('#networkBanner'); if (e
 if ($('#networkBanner')) $('#networkBanner').hidden = navigator.onLine !== false;
 const root = document.documentElement, longEl = $('#long'), shortEl = $('#short'), thickEl = $('#thick');
 let shape = 'oval', selected = null, query = {}, page = 1, controller;
+// 진행 중인 검색과 동일한 조건(요청 9)이면 새 request를 만들지 않는다 - 버튼 연타/Enter+클릭 중복 등.
+// 결과를 세션 캐시로 재사용하지는 않는다 - 오류 후 "다시 시도"나 같은 검색어의 반복 제출은 항상 최신
+// 데이터를 다시 조회해야 하며, 지난 성공 응답을 그대로 보여주면 오류 상태를 감추게 된다.
+let searchInFlightKey = null;
+function searchCacheKey(q, nextPage) { return JSON.stringify([q.item_name, q.entp_name, q.item_seq, nextPage]); }
 // True once the user has picked a real product or explicitly gone to manual entry this session -
 // distinguishes "resume where I left off" from a fresh visit, see syncPillStep().
 let pillEngaged = false;
@@ -308,12 +313,45 @@ document.querySelectorAll('.shape').forEach(button => button.onclick = () => {
   shape = button.dataset.shape;
   document.querySelectorAll('.shape').forEach(el => el.classList.toggle('active', el === button)); render();
 });
-function infoCell(icon, label, value) {
+function infoCell(iconId, label, value) {
   const cell = document.createElement('div'); cell.className = 'info-cell';
   const body = document.createElement('div'); body.className = 'info-body';
   body.append(flowNode('span', label, 'info-label'), flowNode('span', value || '정보 없음'));
-  cell.append(flowNode('span', icon, 'info-ic'), body);
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('class', 'icon info-ic'); icon.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', `#${iconId}`); icon.append(use);
+  cell.append(icon, body);
   return cell;
+}
+// 검색 목록은 가벼운 데이터(light=1, 이름/제조사/모양/치수 등)만 담고 있다 - 허가정보/e약은요 같은
+// 상세 데이터는 status:'not_requested'로 비어 있다. 사용자가 실제로 이 제품을 선택했을 때만
+// item_seq 단일 조회(비용이 2회로 저렴하다)로 채운다. 이미 조회된(상태가 not_requested가 아닌) 항목은
+// 다시 요청하지 않는다 - 처방전 매칭 등 기존 호출자가 이미 채워 넘긴 데이터를 덮어쓰지 않기 위함이다.
+async function ensureMedicineDetail(item) {
+  if (!item || (item.permit?.status !== 'not_requested' && item.easy?.status !== 'not_requested')) return;
+  try {
+    const response = await fetch(API_BASE + '/api/medicines?' + new URLSearchParams({ item_seq: item.id }), { signal: AbortSignal.timeout(8000) });
+    const data = await response.json();
+    const fresh = data?.items?.find(i => String(i?.id) === String(item.id));
+    if (response.ok && fresh) {
+      if (item.permit?.status === 'not_requested') item.permit = fresh.permit;
+      if (item.easy?.status === 'not_requested') item.easy = fresh.easy;
+    }
+  } catch { /* 치수·모양 등 목록에 이미 있던 기본 정보는 이 조회 결과와 무관하게 그대로 표시된다. */ }
+}
+function renderMedicineDialogBody(dialog, item, destination) {
+  dialog.replaceChildren(flowNode('h2', item.name || item.itemName), flowNode('p', item.company || item.entpName || '제조사 미제공'),
+    flowNode('p', destination.medicineForm === 'unknown' ? '제품 유형 확인 필요 · 공식 제형 정보를 확인해주세요.' : '의약품 정보'),
+    flowNode('p', `제형: ${MedicineFlow.formOf(item) || '미제공'}`), flowNode('p', MedicineFlow.packageOf(item)));
+  // 연고/크림/겔/외용제 등(요청 6): 알약 크기 UI 없이 사용방법/보관방법/주의사항을 e약은요 원문 그대로
+  // 보여준다 - "사용 부위"·"1회 사용량"처럼 식약처 데이터에 구조화된 필드가 없는 항목은 "정보 없음"으로
+  // 정직하게 남기고 추정하지 않는다.
+  const e = item.easy?.data;
+  const info = document.createElement('div'); info.className = 'summary-info-grid';
+  info.append(infoCell('ic-target', '사용부위', e?.applicationSite), infoCell('ic-dose', '사용량', e?.dose),
+    infoCell('ic-doc', '사용방법', e?.usage), infoCell('ic-box', '보관방법', officialStorageText(item)));
+  dialog.append(info);
+  if (e?.precautions || e?.warning) dialog.append(flowNode('p', `주의사항: ${e.precautions || e.warning}`, 'tip'));
+  const close = flowNode('button', '닫기'); close.type = 'button'; close.onclick = () => typeof dialog.close === 'function' ? dialog.close() : dialog.removeAttribute('open'); dialog.append(close);
 }
 function openMedicine(item, button, fetchedAt) {
   if (!item || typeof item !== 'object') { showToast('제품 정보를 확인할 수 없습니다. 다시 검색해주세요.', 'error'); return; }
@@ -325,20 +363,11 @@ function openMedicine(item, button, fetchedAt) {
   if (MedicineFlow.classifyDisplayForm(item) === 'powder-sachet') { showScreen('liquid'); $('#liquidWaySearch').click(); selectLiquid(item); return; }
   let dialog = $('#medicineInfoDialog');
   if (!dialog) { dialog = document.createElement('dialog'); dialog.id = 'medicineInfoDialog'; document.body.append(dialog); }
-  dialog.replaceChildren(flowNode('h2', item.name || item.itemName), flowNode('p', item.company || item.entpName || '제조사 미제공'),
-    flowNode('p', destination.medicineForm === 'unknown' ? '제품 유형 확인 필요 · 공식 제형 정보를 확인해주세요.' : '의약품 정보'),
-    flowNode('p', `제형: ${MedicineFlow.formOf(item) || '미제공'}`), flowNode('p', MedicineFlow.packageOf(item)));
-  // 연고/크림/겔/외용제 등(요청 6): 알약 크기 UI 없이 사용방법/보관방법/주의사항을 e약은요 원문 그대로
-  // 보여준다 - "사용 부위"·"1회 사용량"처럼 식약처 데이터에 구조화된 필드가 없는 항목은 "정보 없음"으로
-  // 정직하게 남기고 추정하지 않는다.
-  const e = item.easy?.data;
-  const info = document.createElement('div'); info.className = 'summary-info-grid';
-  info.append(infoCell('📍', '사용부위', e?.applicationSite), infoCell('🥄', '사용량', e?.dose),
-    infoCell('📝', '사용방법', e?.usage), infoCell('📦', '보관방법', officialStorageText(item)));
-  dialog.append(info);
-  if (e?.precautions || e?.warning) dialog.append(flowNode('p', `주의사항: ${e.precautions || e.warning}`, 'tip'));
-  const close = flowNode('button', '닫기'); close.type = 'button'; close.onclick = () => typeof dialog.close === 'function' ? dialog.close() : dialog.removeAttribute('open'); dialog.append(close);
+  renderMedicineDialogBody(dialog, item, destination);
   if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal(); else dialog.setAttribute('open', '');
+  if (item.easy?.status === 'not_requested') {
+    ensureMedicineDetail(item).then(() => { if (dialog.open || dialog.hasAttribute('open')) renderMedicineDialogBody(dialog, item, destination); });
+  }
 }
 function rxDisplayRow(group) {
   return group.chosen && group.row ? { ...group.row, doseUnit: MedicineFlow.officialDoseUnit(group.chosen.item, group.row.doseUnit) } : group.row;
@@ -368,6 +397,12 @@ function selectMedicine(item, button, fetchedAt) {
   pillEngaged = true;
   setPillStep('result');
   render();
+  // 치수/모양(3D)은 검색 목록 데이터만으로 이미 위에서 그렸다 - 여기서는 핵심정보 카드(복용방법/
+  // 보관방법)와 상세정보 아코디언에 필요한 허가정보/e약은요만 선택 시점에 지연 로딩한다. 이미지가
+  // 검색을 막지 않듯, 이 조회도 이미 그린 3D·치수 화면을 막지 않는다.
+  if (item.permit?.status === 'not_requested' || item.easy?.status === 'not_requested') {
+    ensureMedicineDetail(item).then(() => { if (selected === item) showIdentity(item); });
+  }
 }
 function safeImage(url) {
   try {
@@ -776,8 +811,32 @@ function renderRevealedResults() {
 }
 $('#showMoreResults').onclick = () => { revealedCount += REVEAL_STEP; renderRevealedResults(); };
 
+function applySearchResult(data, otherData, nextPage) {
+  page = data.page;
+  const merged = new Map();
+  // 허가정보(otherData)를 먼저 넣고 낱알식별(data)로 덮어써서, 같은 품목이 두 소스에 모두 있으면
+  // 치수·모양이 있는 낱알식별 데이터가 우선한다.
+  if (otherData && Array.isArray(otherData.items)) for (const item of otherData.items) if (item && typeof item === 'object') merged.set(String(item.id), { item, fetchedAt: otherData.fetchedAt });
+  for (const item of (Array.isArray(data.items) ? data.items : [])) if (item && typeof item === 'object') merged.set(String(item.id), { item, fetchedAt: data.fetchedAt });
+  let combined = [...merged.values()];
+  // "빠른 확인" 칩에서 들어온 경우에만 결과를 좁힌다 - 별도 검색이 아니라 같은 결과의 필터일 뿐이다.
+  if (searchFormFilter) combined = combined.filter(({ item }) => searchFormFilter.includes(MedicineFlow.classifyDisplayForm(item)));
+  $('#searchStatus').textContent = combined.length ? `총 ${data.total}개 제품 · 제조사와 함량을 확인해주세요.` : '검색 결과가 없습니다. 제품명을 확인하거나 치수를 직접 입력해주세요.';
+  allResultItems = combined;
+  $('#results').replaceChildren();
+  revealedCount = REVEAL_STEP;
+  renderRevealedResults();
+  if (!allResultItems.length) renderEmpty($('#results'), '검색된 약이 없습니다. 포장에 적힌 제품명을 확인해주세요.', '검색어 다시 입력', () => $('#query').focus());
+  $('#pagination').hidden = data.total <= data.pageSize;
+  $('#prevPage').disabled = page <= 1; $('#nextPage').disabled = page * data.pageSize >= data.total || page >= 100;
+  $('#pageLabel').textContent = `${page} / ${Math.ceil(data.total / data.pageSize)}`;
+}
 async function search(nextPage = 1) {
+  const cacheKey = searchCacheKey(query, nextPage);
+  // 섹션 9: 같은 조건 검색이 이미 진행 중이면(버튼 연타 등) 새 request를 만들지 않는다.
+  if (cacheKey === searchInFlightKey) return;
   controller?.abort(); controller = new AbortController(); const current = controller;
+  searchInFlightKey = cacheKey;
   $('#searchStatus').textContent = '의약품 정보를 찾고 있습니다…';
   renderLoading($('#results')); $('#pagination').hidden = true; $('#showMoreResults').hidden = true;
   allResultItems = []; revealedCount = 0;
@@ -789,30 +848,16 @@ async function search(nextPage = 1) {
     // /api/liquids(제품허가정보)는 실패해도 조용히 건너뛴다 - 있으면 보강되는 추가 데이터일 뿐이다.
     const otherPromise = fetch(API_BASE + '/api/liquids?' + params, { signal: current.signal })
       .then(r => r.ok ? r.json() : null).catch(() => null);
-    const response = await fetch(API_BASE + '/api/medicines?' + params, { signal: current.signal });
+    // 목록은 가벼운 데이터만 받는다(light=1) - 허가정보/e약은요는 항목을 실제로 선택했을 때만
+    // item_seq 단일 조회로 가져온다(ensureMedicineDetail). 항목마다 미리 다 받아오던 방식이 검색을
+    // 느리게 하고(최대 40회 추가 API 호출), 식약처 API 호출 한도를 소진시켜 검색 실패로 이어졌다.
+    const response = await fetch(API_BASE + '/api/medicines?' + new URLSearchParams({ ...query, pageNo: nextPage, numOfRows: 20, light: '1' }), { signal: current.signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data?.error || '검색에 실패했습니다.');
     if (!data || typeof data !== 'object') throw new Error('검색 정보를 불러오지 못했습니다. 다시 시도해주세요.');
     const otherData = await otherPromise;
     if (current !== controller) return;
-    page = data.page;
-    const merged = new Map();
-    // 허가정보(otherData)를 먼저 넣고 낱알식별(data)로 덮어써서, 같은 품목이 두 소스에 모두 있으면
-    // 치수·모양이 있는 낱알식별 데이터가 우선한다.
-    if (otherData && Array.isArray(otherData.items)) for (const item of otherData.items) if (item && typeof item === 'object') merged.set(String(item.id), { item, fetchedAt: otherData.fetchedAt });
-    for (const item of (Array.isArray(data.items) ? data.items : [])) if (item && typeof item === 'object') merged.set(String(item.id), { item, fetchedAt: data.fetchedAt });
-    let combined = [...merged.values()];
-    // "빠른 확인" 칩에서 들어온 경우에만 결과를 좁힌다 - 별도 검색이 아니라 같은 결과의 필터일 뿐이다.
-    if (searchFormFilter) combined = combined.filter(({ item }) => searchFormFilter.includes(MedicineFlow.classifyDisplayForm(item)));
-    $('#searchStatus').textContent = combined.length ? `총 ${data.total}개 제품 · 제조사와 함량을 확인해주세요.` : '검색 결과가 없습니다. 제품명을 확인하거나 치수를 직접 입력해주세요.';
-    allResultItems = combined;
-    $('#results').replaceChildren();
-    revealedCount = REVEAL_STEP;
-    renderRevealedResults();
-    if (!allResultItems.length) renderEmpty($('#results'), '검색된 약이 없습니다. 포장에 적힌 제품명을 확인해주세요.', '검색어 다시 입력', () => $('#query').focus());
-    $('#pagination').hidden = data.total <= data.pageSize;
-    $('#prevPage').disabled = page <= 1; $('#nextPage').disabled = page * data.pageSize >= data.total || page >= 100;
-    $('#pageLabel').textContent = `${page} / ${Math.ceil(data.total / data.pageSize)}`;
+    applySearchResult(data, otherData, nextPage);
   } catch (error) {
     if (current === controller && error.name !== 'AbortError') {
       $('#searchStatus').textContent = error instanceof TypeError ? '네트워크 연결을 확인해주세요.'
@@ -820,11 +865,16 @@ async function search(nextPage = 1) {
         : error.message;
       renderEmpty($('#results'), '약 정보를 가져오지 못했습니다.', '다시 시도', () => search(nextPage));
     }
-  } finally { if (current === controller) $('#results').removeAttribute('aria-busy'); }
+  } finally {
+    if (current === controller) $('#results').removeAttribute('aria-busy');
+    if (searchInFlightKey === cacheKey) searchInFlightKey = null;
+  }
 }
 $('#searchForm').onsubmit = event => {
   event.preventDefault();
-  query = { item_name: $('#query').value.trim(), entp_name: $('#companyQuery').value.trim(), item_seq: $('#itemSeqQuery').value.trim() };
+  // trim + 연속 공백 정리만 한다 - 한글 제품명을 임의로 바꾸거나 fuzzy matching을 넣지 않는다.
+  const clean = value => value.trim().replace(/\s+/g, ' ');
+  query = { item_name: clean($('#query').value), entp_name: clean($('#companyQuery').value), item_seq: $('#itemSeqQuery').value.trim() };
   if (!Object.values(query).some(Boolean)) { $('#searchStatus').textContent = '의약품 이름 또는 추가 검색 조건을 입력해주세요.'; $('#query').focus(); return; }
   search();
 };
@@ -848,10 +898,10 @@ previewCal(); applyCal(calibration?.scale || 1); render();
   // liquid/settings back buttons - and #pillTool/#liquidTool keep the exact class-based show/hide
   // ('hidden' class on pillTool, 'active' class on liquidTool) other code and tests rely on.
   function showScreen(mode) {
-    // Login-first gate (요청 2): while open, only 'login'/'profile' (onboarding) are reachable, so a
+    // Login-first gate (요청 2): while open, only login and onboarding screens are reachable, so a
     // bottom-nav/top-nav tap or a back-btn can never route around it. openGate()/closeGate() are the
     // only things that flip authGateOpen - see initAuth() near the end of this file.
-    if (authGateOpen && mode !== 'login' && mode !== 'profile') return;
+    if (authGateOpen && !['login', 'consent', 'profile'].includes(mode)) return;
     const home = document.querySelector('#screenHome'), settings = document.querySelector('#screenSettings');
     const login = document.querySelector('#screenLogin'), profile = document.querySelector('#screenProfile');
     const pillTool = document.querySelector('#pillTool'), liquidTool = document.querySelector('#liquidTool');
@@ -860,6 +910,7 @@ previewCal(); applyCal(calibration?.scale || 1); render();
     document.querySelector('#storageTool').hidden = mode !== 'storage';
     window.dispatchEvent(new CustomEvent('screenchange', { detail: mode }));
     if (settings) settings.hidden = mode !== 'settings';
+    $('#screenConsent').hidden = mode !== 'consent';
     if (login) login.hidden = mode !== 'login';
     if (profile) profile.hidden = mode !== 'profile';
     pillTool.classList.toggle('hidden', mode !== 'pill');
@@ -952,19 +1003,75 @@ function applyProfileToPatientFields(profile) {
   rxGroups.forEach(group => { if (group.chosen) renderRxDoseDetail(group); });
 }
 
+let providerAvailability = {}, currentConsent = null;
 function renderLoginProviders() {
   const container = $('#loginProviders'); if (!container || !authApi) return;
   container.replaceChildren();
   for (const provider of authApi.OAUTH_PROVIDERS) {
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = provider.label; button.disabled = !provider.enabled;
-    if (provider.enabled) button.onclick = () => startOAuthLogin(provider.id);
-    container.append(button);
+    const row = document.createElement('div');
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = `social-login social-${provider.id}`;
+    button.disabled = !provider.enabled || providerAvailability[provider.id] !== true;
+    const symbol = document.createElement('span'); symbol.className = 'social-symbol'; symbol.setAttribute('aria-hidden', 'true');
+    const img = document.createElement('img'); img.alt = '';
+    img.src = `/brand/${{ google: 'google-g.png', kakao: 'kakao-login.png', naver: 'naver-icon.png' }[provider.id]}`;
+    symbol.append(img);
+    const label = document.createElement('span'); label.textContent = provider.label;
+    button.append(symbol, label);
+    if (!button.disabled) button.onclick = () => startOAuthLogin(provider.id);
+    row.append(button);
+    if (button.disabled) {
+      const status = document.createElement('p'); status.className = 'provider-status'; status.id = `provider-status-${provider.id}`;
+      status.textContent = !provider.enabled ? '준비 중' : providerAvailability[provider.id] === false ? '로그인 연결 준비 중' : '로그인 연결 확인 중';
+      button.setAttribute('aria-describedby', status.id); row.append(status);
+    }
+    container.append(row);
   }
 }
 function startOAuthLogin(providerId) {
-  if (!authApi || !authConfigData) { $('#loginStatus').textContent = '로그인을 사용할 수 없습니다. 잠시 후 다시 시도해주세요.'; return; }
+  if (!authApi || !authConfigData || providerAvailability[providerId] !== true) { $('#loginStatus').textContent = '로그인을 사용할 수 없습니다. 잠시 후 다시 시도해주세요.'; return; }
   location.href = authApi.buildAuthorizeUrl(authConfigData, providerId, location.origin + location.pathname);
 }
+function syncConsentChoices() {
+  const boxes = [$('#consentTerms'), $('#consentPrivacy'), $('#consentMarketing')];
+  $('#consentAll').checked = boxes.filter(box => !box.disabled).every(box => box.checked);
+  $('#consentAll').indeterminate = boxes.some(box => box.checked) && !$('#consentAll').checked;
+  $('#consentNext').disabled = !boxes[0].checked || !boxes[1].checked || !authApi?.consentDocumentsReady(boxes[2].checked);
+}
+function openConsentOnboarding() {
+  currentConsent = null; $('#consentForm').reset();
+  $('#consentMarketing').disabled = !authApi.consentDocumentsReady(true);
+  $('#consentStatus').textContent = authApi.consentDocumentsReady() ? '' : '약관 문서를 준비 중입니다. 문서가 등록되면 가입을 계속할 수 있어요.';
+  syncConsentChoices(); openGate('consent');
+}
+for (const id of ['consentTerms', 'consentPrivacy', 'consentMarketing']) $('#' + id).onchange = syncConsentChoices;
+$('#consentAll').onchange = () => {
+  for (const id of ['consentTerms', 'consentPrivacy', 'consentMarketing']) if (!$('#' + id).disabled) $('#' + id).checked = $('#consentAll').checked;
+  syncConsentChoices();
+};
+document.querySelectorAll('[data-consent-document]').forEach(button => button.onclick = () => {
+  const doc = authApi?.CONSENT_DOCUMENTS[button.dataset.consentDocument];
+  if (doc?.url && doc?.version) window.open(doc.url, '_blank', 'noopener,noreferrer');
+  else alert('약관 문서를 준비 중입니다. 아직 동의를 받지 않습니다.');
+});
+$('#loginPrivacyLink').onclick = () => $('#privacyLink').click();
+$('#consentForm').onsubmit = async event => {
+  event.preventDefault();
+  if ($('#consentNext').disabled || !authSession) return;
+  $('#consentNext').disabled = true;
+  const savingSession = authSession;
+  try {
+    const savedConsent = await authApi.saveConsent(authConfigData, authSession, {
+      terms: $('#consentTerms').checked, privacy: $('#consentPrivacy').checked, marketing: $('#consentMarketing').checked
+    }, fetch);
+    if (authSession !== savingSession) return;
+    currentConsent = savedConsent;
+    openProfileOnboarding();
+  } catch { $('#consentStatus').textContent = '동의 내역을 저장하지 못했습니다. 다시 시도해주세요.'; }
+  finally { syncConsentChoices(); }
+};
+$('#consentLogout').onclick = () => $('#settingsLogoutRow').click();
+$('#loginRetry').onclick = () => initAuth();
 
 const SEX_LABEL = { male: '남성', female: '여성', prefer_not_to_say: '선택하지 않음' };
 function fillProfileForm(profile) {
@@ -983,14 +1090,16 @@ function showProfileReadMode(show) { $('#profileReadView').hidden = !show; $('#p
 function openProfileOnboarding() {
   profileMode = 'onboarding';
   $('#profileBackBtn').hidden = true;
-  $('#profileTitle').textContent = '프로필 설정';
-  $('#profileIntro').textContent = '처방 용량 분석(체중·연령 기준 비교)에 사용할 기본 정보입니다. 로그인한 계정에 저장되며, 값이 없어도 나머지 용량 분석은 그대로 동작합니다.';
-  $('#profileSave').textContent = '저장하고 시작하기';
+  $('#profileStep').hidden = false;
+  $('#profileTitle').textContent = '복용 정보를 더 정확하게 보여드리기 위해 필요해요.';
+  $('#profileIntro').textContent = '생년월일·성별·체중은 선택 입력이에요. 내 정보에서 언제든 수정할 수 있어요.';
+  $('#profileSave').textContent = '시작하기';
   fillProfileForm(null);
   showProfileReadMode(false);
   openGate('profile');
 }
 function openProfileEditor(returnMode) {
+  $('#profileStep').hidden = true;
   profileMode = 'edit'; profileReturnMode = returnMode;
   $('#profileBackBtn').hidden = false;
   $('#profileTitle').textContent = '내 정보';
@@ -1010,6 +1119,7 @@ document.querySelectorAll('#profileSexGroup [data-sex]').forEach(btn => btn.oncl
 $('#profileBirthDate').max = new Date().toISOString().slice(0, 10); // 미래 생년월일 선택 차단 (요청 5)
 $('#profileForm').onsubmit = async event => {
   event.preventDefault();
+  if (profileMode === 'onboarding' && !authApi?.hasRequiredConsent(currentConsent)) { openConsentOnboarding(); return; }
   const weightRaw = $('#profileWeight').value;
   let weightKg = null;
   if (weightRaw !== '') {
@@ -1026,8 +1136,10 @@ $('#profileForm').onsubmit = async event => {
   $('#profileSave').disabled = true;
   $('#profileStatus').dataset.tone = '';
   $('#profileStatus').textContent = '저장하는 중…';
+  const savingSession = authSession;
   try {
     const saved = await authApi.saveProfile(authConfigData, authSession, { birthDate, sex, weightKg }, fetch);
+    if (authSession !== savingSession) return;
     applyProfileToPatientFields(saved);
     if (profileMode === 'onboarding') closeGate(); else showScreen(profileReturnMode);
     showToast('✓ 저장되었습니다');
@@ -1035,18 +1147,25 @@ $('#profileForm').onsubmit = async event => {
   finally { $('#profileSave').disabled = false; }
 };
 $('#settingsLogoutRow').onclick = async () => {
-  if (authApi) { try { await authApi.signOut(authConfigData, authSession, fetch, localStorage); } catch { /* local session is still cleared below regardless of a network error */ } }
+  const endingSession = authSession;
+  const logout = authApi?.signOut(authConfigData, endingSession, fetch, localStorage);
+  currentConsent = null; $('#consentForm').reset(); fillProfileForm(null);
   authSession = null; currentProfile = null; patientWeightKg = null; patientAgeYears = null;
-  renderProfileSummaries();
-  openGate('login');
+  renderProfileSummaries(); openGate('login');
+  const result = await logout;
+  if (result?.remoteRevoked === false && !authSession) {
+    $('#loginStatus').textContent = '이 기기에서는 로그아웃했습니다. 네트워크 오류로 서버 세션 종료는 확인하지 못했습니다.';
+  }
 };
 // Ties auth.decideGateScreen's decision to the actual screen/gate state (요청 17's scenarios map
 // 1:1 onto this). Shared by initAuth() and by the test harness (__rxTest.applyAuthResolution), so the
 // real decision logic is what's under test, not a re-implementation of it.
-function applyAuthResolution(resolvedAuthApi, session, profile, config = null) {
+function applyAuthResolution(resolvedAuthApi, session, profile, config = null, consent = null) {
+  currentConsent = consent;
   authApi = resolvedAuthApi; authSession = session; authConfigData = config ?? authConfigData;
-  const next = authApi.decideGateScreen(session, profile);
+  const next = authApi.decideGateScreen(session, profile, consent);
   if (next === 'home') { applyProfileToPatientFields(profile); closeGate(); }
+  else if (next === 'consent-onboarding') openConsentOnboarding();
   else if (next === 'profile-onboarding') openProfileOnboarding();
   else openGate('login');
   return next;
@@ -1059,6 +1178,7 @@ async function initAuth() {
   // ~200 tests that predate login can keep clicking straight into the app exactly as before.
   if (window.__TEST_SKIP_AUTH_GATE__) { closeGate(); renderRecents(); renderStorageList(); syncSaveButtons(); return; }
   openGate('login');
+  $('#loginStatus').textContent = ''; $('#loginRetry').hidden = true;
   renderRecents(); renderStorageList(); syncSaveButtons(); // localStorage-only; safe to render while gated
   // Auth-gate tests drive applyAuthResolution() themselves (see test/ui.test.js) and must not race a
   // second, real resolution attempt below - the real import() would reject asynchronously in the test
@@ -1074,15 +1194,20 @@ async function initAuth() {
     // "로그인 화면 없이 곧장 홈으로 진입"하던 원인이었다 - 로그인 버튼은 눌러도 동작하지 않겠지만,
     // 게이트 자체를 우회시켜서는 안 된다. 로그인 화면은 openGate('login')으로 이미 열려 있으므로
     // 여기서는 상태 메시지만 남기고 그대로 둔다.
-    if (!config) { $('#loginStatus').textContent = '로그인을 사용할 수 없습니다. 잠시 후 다시 시도해주세요.'; return; }
+    if (!config) { $('#loginStatus').textContent = '로그인을 사용할 수 없습니다. 잠시 후 다시 시도해주세요.'; $('#loginRetry').hidden = false; return; }
+    try { providerAvailability = await authApi.fetchProviderAvailability(config, fetch); }
+    catch { providerAvailability = {}; $('#loginStatus').textContent = '로그인 연결 상태를 확인하지 못했습니다.'; $('#loginRetry').hidden = false; }
+    renderLoginProviders();
     const session = await authApi.resolveSession(config, { fetchImpl: fetch, storage: localStorage });
     let profile = null;
-    if (session) profile = await authApi.fetchProfile(config, session, fetch).catch(() => null);
-    applyAuthResolution(authApi, session, profile, config);
+    if (session) profile = await authApi.fetchProfile(config, session, fetch);
+    const consent = session && !profile ? await authApi.fetchConsent(config, session, fetch) : null;
+    applyAuthResolution(authApi, session, profile, config, consent);
   } catch {
     // auth 모듈/네트워크 오류가 나도 마찬가지로 로그인 화면에 그대로 둔다 - session이 없는 상태를
     // 홈으로 여는 예외는 없다.
-    $('#loginStatus').textContent = '로그인을 사용할 수 없습니다. 잠시 후 다시 시도해주세요.';
+    $('#loginStatus').textContent = '로그인 또는 계정 정보를 확인하지 못했습니다. 다시 시도해주세요.';
+    $('#loginRetry').hidden = false;
   }
 }
 
@@ -1205,7 +1330,10 @@ let rxDetailState = null, rxDetailRequest = 0, rxPrescriptionDate = null;
 let rxDailyCalc = null;
 async function ensureRxDailyCalc() { return rxDailyCalc ||= await import('./prescription-dose.js'); }
 function rxIngredient(item) {
-  return item?.permit?.data?.ingredients || item?.name?.match(/\(([^)]+)\)/)?.[1] || '성분 확인 필요';
+  // 원본 MFDS ingredients 필드는 종종 내부 성분코드가 "[M105518]성분명"처럼 이름 앞에 그대로 붙어
+  // 있다 - 사용자에게는 의미 없는 코드이므로 표시 전에 제거한다.
+  const raw = (item?.permit?.data?.ingredients || '').replace(/^\[[^\]]*\]\s*/, '');
+  return raw || item?.name?.match(/\(([^)]+)\)/)?.[1] || '성분 확인 필요';
 }
 function rxShortDose(group) {
   const row = group?.row ? rxDisplayRow(group) : null;
@@ -1277,7 +1405,11 @@ function renderRxSummary(body, group) {
   });
   name.append(flowNode('span', ' ›')); body.append(name, flowNode('p', rxIngredient(item), 'rx-detail-muted'), flowNode('p', rxShortDose(group), 'rx-detail-prescription'));
   const actions = flowNode('div', '', 'rx-detail-actions');
-  const dose = rxButton('용량 확인', 'btn-primary rx-action-analyze', () => openRxDetail(group, 'dose')); dose.disabled = !item;
+  // 요청: 공식 제품이 아직 확정되지 않은 상태(OCR 후보 확인 전)가 처방전 스캔 직후의 가장 흔한 기본
+  // 상태다 - 이때도 처방전에서 읽은 1회량·하루 횟수(group.row)만 있으면 하루 총량(단위 기준)까지는
+  // 보여줄 수 있으므로 버튼을 막지 않는다. 공식 비교(mg 환산) 실패와 버튼 비활성화는 서로 다른 문제다.
+  const hasRowAmount = Number.isFinite(group.row?.dosePerAdministration) && Number.isFinite(group.row?.frequencyPerDay);
+  const dose = rxButton('용량 확인', 'btn-primary rx-action-analyze', () => openRxDetail(group, 'dose')); dose.disabled = !item && !hasRowAmount;
   actions.append(dose, rxButton('처방내용 수정', 'rx-action-edit', () => openRxDetail(group, 'edit'))); body.append(actions);
   if (!item) body.append(flowNode('p', group.status || '공식 제품을 선택하면 용량과 제품 정보를 확인할 수 있어요.', 'rx-detail-muted'));
   const product = flowNode('section', '', 'rx-detail-product'); product.append(flowNode('h3', '제품 정보'));
@@ -1357,10 +1489,15 @@ function renderRxGroup(group) {
 function renderRxGroups() { updateRxSelection(); }
 const RX_DAILY_LABELS = { below: '공식 하루 용량 범위보다 적어요', within: '공식 하루 용량 범위예요', above: '공식 하루 용량 범위보다 많아요' };
 function rxNumber(value) { return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(value); }
+// 90/100%처럼 끝 쪽 위치에서 translateX(-50%) 중앙정렬을 그대로 쓰면 라벨의 절반이 컨테이너 밖으로
+// 밀려나고, overflow-wrap:anywhere가 그 좁아진 공간에서 숫자를 한 글자씩 세로로 쪼갠다(390px에서
+// 실측 확인된 회귀) - 끝 쪽에서는 중앙정렬 대신 안쪽으로만 펼쳐지는 정렬을 쓴다.
+function rxEdgeAlign(percent) { return percent <= 8 ? 'align-start' : percent >= 92 ? 'align-end' : 'align-center'; }
 function renderDailyBar(reference, current, position) {
   const box = flowNode('div', '', 'rx-daily-bar'); box.setAttribute('role', 'img');
   box.setAttribute('aria-label', `공식 ${rxNumber(reference.min)}~${rxNumber(reference.max)} mg/일, 현재 ${rxNumber(current)} mg/일`);
-  const ends = flowNode('div', '', 'rx-daily-endpoints'); ends.append(flowNode('span', rxNumber(reference.min)), flowNode('span', rxNumber(reference.max)));
+  const ends = flowNode('div', '', 'rx-daily-endpoints');
+  ends.append(flowNode('span', rxNumber(reference.min), rxEdgeAlign(position.rangeStartPercent)), flowNode('span', rxNumber(reference.max), rxEdgeAlign(position.rangeEndPercent)));
   // Extend the axis for out-of-range values. Within the range this is exactly (current-min)/(max-min).
   const track = flowNode('div', '', 'rx-daily-track'); const band = flowNode('span', '', 'rx-daily-band');
   band.style.left = `${position.rangeStartPercent}%`; band.style.width = `${position.rangeEndPercent - position.rangeStartPercent}%`;
@@ -1377,16 +1514,42 @@ async function computeDoseAnalysis(group) {
     try {
       const response = await fetch(API_BASE + path + '?' + new URLSearchParams({ item_seq: item.id }), { signal: AbortSignal.timeout(12000) });
       const data = await response.json(); const fresh = data?.items?.find(i => String(i?.id) === String(item.id));
-      if (response.ok && fresh) { if (fresh.easy?.status === 'ok') item.easy = fresh.easy; if (fresh.permit?.status === 'ok') item.permit = fresh.permit; }
+      // "이 제품엔 e약은요 데이터가 없다(not_found)"는 "재조회 자체가 실패했다"와 다른 결론이다 -
+      // 전자는 실제로 조회에 성공해서 얻은 확정적 답이므로 그대로 받아들여야 한다. status==='ok'일
+      // 때만 받아들이면 not_found가 계속 이전의 not_requested로 남아, 정보가 없는 제품을 "불러오지
+      // 못했어요"(재시도 유도)로 잘못 표시하게 된다 - 실제로는 이미 답을 알고 있는데도.
+      if (response.ok && fresh) {
+        if (['ok', 'not_found'].includes(fresh.easy?.status)) item.easy = fresh.easy;
+        if (['ok', 'not_found'].includes(fresh.permit?.status)) item.permit = fresh.permit;
+      }
     } catch { /* Current totals remain available; distinguish unavailable official data below. */ }
   }
   const analysis = calc.analyzePrescriptionDaily({ item, row: group.row ? rxDisplayRow(group) : null, kind: group.chosen.kind, ageYears: patientAgeYears, weightKg: patientWeightKg });
   analysis.fetchFailed = !item.easy || ['not_requested', 'error'].includes(item.easy.status);
   return analysis;
 }
+// OCR 인식 직후(공식 제품 후보 확인 전)가 기본 상태이므로 item이 없어도 화면을 비워두지 않는다 -
+// group.row(처방전에서 읽은 1회량·하루 횟수)만으로 구할 수 있는 단위 기준 하루 총량까지는 보여주고,
+// mg 환산·공식 비교는 제품을 선택해야만 가능하다는 것을 명확히 안내한다(공식 비교 실패 ≠ 버튼 막힘).
+function renderRxDailyWithoutProduct(body, group) {
+  const row = group.row;
+  const hasAmount = Number.isFinite(row?.dosePerAdministration) && Number.isFinite(row?.frequencyPerDay);
+  if (hasAmount) {
+    const unitLabel = row.doseUnit || '';
+    body.append(flowNode('p', '하루 처방량', 'rx-detail-muted'));
+    body.append(flowNode('strong', `${rxNumber(row.dosePerAdministration * row.frequencyPerDay)}${unitLabel}/일`, 'rx-daily-total'));
+    body.append(flowNode('p', `${rxNumber(row.dosePerAdministration)}${unitLabel} × 하루 ${row.frequencyPerDay}회`, 'rx-detail-muted'));
+  } else {
+    body.append(flowNode('p', '처방량 정보가 부족해 하루 총량을 계산할 수 없어요.', 'rx-detail-muted'));
+  }
+  body.append(flowNode('p', '공식 성분 함량과 비교하려면 제품을 먼저 선택해주세요.', 'rx-daily-verdict unknown'));
+  body.append(rxButton('제품 선택하기', 'btn-primary rx-action-product', () => openRxDetail(group, 'product')));
+}
 async function renderRxDaily(body, group, request) {
-  const item = group.chosen?.item; if (!item) return;
-  body.append(flowNode('h3', item.name), flowNode('p', rxIngredient(item), 'rx-detail-muted'));
+  const item = group.chosen?.item;
+  body.append(flowNode('h3', item?.name || group.term || '처방약'));
+  if (item) body.append(flowNode('p', rxIngredient(item), 'rx-detail-muted'));
+  if (!item) return renderRxDailyWithoutProduct(body, group);
   const content = flowNode('div'); body.append(content); renderLoading(content);
   try {
     const analysis = await computeDoseAnalysis(group);
